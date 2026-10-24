@@ -1,0 +1,38 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Setup: venv + install (eenmalig)",
+      "type": "shell",
+      "command": "python3 -m venv .venv && .venv/bin/python -m pip install -U pip && .venv/bin/python -m pip install -e \".[dev]\" && ([ -f .env ] || cp .env.example .env)",
+      "windows": {
+        "command": "py -3 -m venv .venv; .venv\\Scripts\\python -m pip install -U pip; .venv\\Scripts\\python -m pip install -e \".[dev]\"; if (!(Test-Path .env)) { Copy-Item .env.example .env }"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Run: web-app (http://localhost:8000)",
+      "type": "shell",
+      "command": ".venv/bin/python -m uvicorn app.main:app --reload --port 8000",
+      "windows": { "command": ".venv\\Scripts\\python -m uvicorn app.main:app --reload --port 8000" },
+      "isBackground": true,
+      "problemMatcher": [],
+      "group": { "kind": "build", "isDefault": true }
+    },
+    {
+      "label": "Run: tests",
+      "type": "shell",
+      "command": ".venv/bin/python -m pytest -q",
+      "windows": { "command": ".venv\\Scripts\\python -m pytest -q" },
+      "problemMatcher": [],
+      "group": { "kind": "test", "isDefault": true }
+    },
+    {
+      "label": "Run: demo-offerte (zonder API-key)",
+      "type": "shell",
+      "command": ".venv/bin/python scripts/demo_quote.py tests/fixtures/sample_geometry.json",
+      "windows": { "command": ".venv\\Scripts\\python scripts/demo_quote.py tests/fixtures/sample_geometry.json" },
+      "problemMatcher": []
+    }
+  ]
+}
