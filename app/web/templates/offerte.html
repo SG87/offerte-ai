@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Offerte {{ quote.number }} · Offerte-AI{% endblock %}
+{% block content %}
+<div class="actions" style="margin-bottom:12px">
+  <a href="/projects/{{ project.id }}">← Werkruimte</a>
+  <strong style="font-size:17px">Offerte {{ quote.number }} v{{ quote.version }} · {{ project.client_name or '[KLANT]' }}</strong>
+  <span class="tag">{{ quote.status }}</span>
+  <span class="tag {{ 'warn' if result.indicative else 'accent' }}">{{ 'indicatief' if result.indicative else 'definitief' }}</span>
+  <span class="tag">prijslijst v{{ quote.config_version }} · skill v{{ quote.skill_version }}{% if result.override_version %} · aanvullingen v{{ result.override_version }}{% endif %}</span>
+</div>
+<div class="row">
+  <div class="col wide">
+    <div class="card" style="max-width:760px">
+      <div class="row" style="justify-content:space-between">
+        <div><strong>{{ org.company_name or '[JOUW BEDRIJF]' }}</strong><br><span class="muted" style="font-size:13px">{{ org.address or '[adres]' }} · {{ org.vat_number or '[btw-nr]' }} · {{ org.email }}</span></div>
+        <div style="text-align:right;font-size:13px"><strong style="font-size:18px">Offerte</strong><br>Nr. {{ quote.number }}<br>Datum {{ result.created_on }}</div>
+      </div>
+      <p style="margin:16px 0 4px"><span class="lbl">Klant</span><strong>{{ project.client_name or '[KLANT]' }}</strong><br><span class="muted">{{ project.client_address or '' }}</span></p>
+      <h2 style="margin-top:12px">{{ project.name }}</h2>
+      <table>
+        <thead><tr><th>Omschrijving</th><th class="num">Hoev.</th><th class="num">Eenh.</th><th class="num">Totaal</th></tr></thead>
+        <tbody>
+        {% for line in result.lines %}
+        <tr><td>{{ line.zone_name }}: {{ line.post_label }}{% if line.layers > 1 %} ({{ line.layers }} lagen){% endif %}</td><td class="num">{{ line.net_qty|qty }}</td><td class="num">{{ line.unit }}</td><td class="num">{{ line.line_total|eur }}</td></tr>
+        {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr><td colspan="3" class="num">Subtotaal excl. btw</td><td class="num">{{ result.totals.subtotal_excl|eur }}</td></tr>
+          <tr><td colspan="3" class="num">Btw {{ result.totals.vat_pct|qty }} %</td><td class="num">{{ result.totals.vat|eur }}</td></tr>
+          <tr style="font-weight:600"><td colspan="3" class="num">Totaal incl. btw</td><td class="num">{{ result.totals.total_incl|eur }}</td></tr>
+        </tfoot>
+      </table>
+      {% if result.assumptions %}<p class="muted" style="font-size:13px;margin-top:12px">Aannames: {% for a in result.assumptions %}{{ a.text }}{% if not loop.last %} · {% endif %}{% endfor %}</p>{% endif %}
+      <p class="muted" style="font-size:13px">Bijlage A: meetstaat · Bijlage B: geannoteerd plan</p>
+    </div>
+  </div>
+  <div class="col">
+    <div class="card">
+      <span class="lbl">Versturen</span>
+      <div class="actions" style="flex-direction:column;align-items:stretch">
+        <a class="btn primary" href="/projects/{{ project.id }}/offerte.pdf" target="_blank">Download PDF</a>
+        <a class="btn" href="/projects/{{ project.id }}/meetstaat.xlsx">Exporteer meetstaat (Excel)</a>
+        <a class="btn" href="/projects/{{ project.id }}/plan.svg" target="_blank">Geannoteerd plan (SVG)</a>
+        <button class="btn" type="button" disabled>Verstuur per e-mail (placeholder)</button>
+        <button class="btn" type="button" disabled>Deel link voor online akkoord (placeholder)</button>
+      </div>
+    </div>
+    <div class="card">
+      <span class="lbl">Koppelingen</span>
+      <select disabled><option>Boekhouding / facturatie — later te configureren</option></select>
+      <p class="muted" style="font-size:13px;margin:8px 0 0">Dezelfde offerte is bereikbaar via de API (<a href="/docs">/docs</a>) en de MCP-server.</p>
+    </div>
+    <div class="card">
+      <span class="lbl">Versies</span>
+      <p style="font-size:14px;margin:0"><strong>v{{ quote.version }}</strong> · {{ quote.status }} · {{ quote.created_at.strftime('%d-%m-%Y %H:%M') }}</p>
+      <form method="post" action="/projects/{{ project.id }}/quote" style="margin-top:10px"><button class="btn sm" type="submit">Herbereken (nieuwe versie)</button></form>
+    </div>
+  </div>
+</div>
+{% endblock %}

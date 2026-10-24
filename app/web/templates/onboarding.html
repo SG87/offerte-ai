@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Onboarding · Offerte-AI{% endblock %}
+{% block content %}
+<h1>In welke sector werk je?</h1>
+<p class="lead">De sector bepaalt welke basis-skill (rekenregels, posten, eenheden) je krijgt. Je kan die later altijd aanpassen.</p>
+<form method="post" action="/onboarding">
+  <div class="row">
+    <div class="col wide">
+      <div class="card">
+        {% if org.website %}
+        <p><span class="tag accent">herkend via {{ org.website }}</span></p>
+        {% endif %}
+        <div class="tiles">
+          {% for s in sectors %}
+          <label class="tile">
+            <input type="radio" name="sector" value="{{ s.sector }}" {{ 'checked' if s.sector == org.sector else '' }}>
+            <strong>{{ s.label }}</strong><span>basis-skill v{{ s.version }}</span>
+          </label>
+          {% endfor %}
+          <label class="tile">
+            <input type="radio" name="sector" value="andere">
+            <strong>Andere…</strong><span>Vraag je sector aan</span>
+          </label>
+        </div>
+        <div class="field" style="margin-top:14px">
+          <label class="lbl" for="sector_request">Jouw sector staat er niet bij? Beschrijf ze (enkel bij "Andere")</label>
+          <textarea id="sector_request" name="sector_request" placeholder="bv. Zwembadbouw: graafwerk, kuip, filtratie, terras"></textarea>
+        </div>
+      </div>
+    </div>
+    <div class="col">
+      <div class="card">
+        <h2>Bedrijfsgegevens</h2>
+        <p class="muted" style="font-size:13px">Vooraf ingevuld uit je website waar mogelijk — controleer ze.</p>
+        <div class="field"><label class="lbl" for="company_name">Bedrijfsnaam</label><input id="company_name" name="company_name" value="{{ org.company_name or '' }}"></div>
+        <div class="field"><label class="lbl" for="address">Adres</label><input id="address" name="address" value="{{ org.address or '' }}"></div>
+        <div class="field"><label class="lbl" for="vat_number">Btw-nummer</label><input id="vat_number" name="vat_number" value="{{ org.vat_number or '' }}"></div>
+        <div class="field"><label class="lbl" for="phone">Telefoon</label><input id="phone" name="phone" value="{{ org.phone or '' }}"></div>
+        <div class="actions"><button class="btn primary" type="submit">Volgende: prijzen instellen</button></div>
+      </div>
+    </div>
+  </div>
+</form>
+{% endblock %}

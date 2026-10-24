@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Offerte-AI{% endblock %}</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="/"><i></i>Offerte-AI</a>
+  {% if org and org.onboarding_done %}
+  <nav>
+    <a href="/projects" class="{{ 'on' if request.url.path.startswith('/projects') else '' }}">Projecten</a>
+    <a href="/config" class="{{ 'on' if request.url.path.startswith('/config') else '' }}">Configuratie</a>
+    <a href="/docs">API</a>
+  </nav>
+  {% endif %}
+  <div class="right">
+    {% if org %}
+      <span class="tag">{{ org.sector }} · {{ org.country }} · {{ org.language }}</span>
+      <span>{{ org.company_name or org.email }}</span>
+      <a href="/logout">afmelden</a>
+    {% endif %}
+    {% if not ai_enabled %}<span class="tag warn" title="Zet ANTHROPIC_API_KEY in .env">AI uit</span>{% endif %}
+  </div>
+</header>
+<main>
+  {% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
+  {% block content %}{% endblock %}
+</main>
+<footer class="foot">Offerte-AI rekent op basis van de door jou aangeleverde plannen, maten en prijzen. Jij controleert de meetstaat en de offerte vóór verzending; het platform draagt geen aansprakelijkheid voor meet- of rekenfouten in verzonden offertes.</footer>
+</body>
+</html>

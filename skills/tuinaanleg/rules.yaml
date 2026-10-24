@@ -1,0 +1,74 @@
+# Basis-skill TUINAANLEG — rekenregels die de engine deterministisch toepast.
+sector: tuinaanleg
+label: Tuinaannemer
+version: "1.0"
+zone_kinds: [terras, oprit, gazon, haag, border, vijver, andere]
+
+params:
+  terras_fundering_depth_m: 0.15   # stabilisé onder terras/oprit
+  default_depth_m: 0.25            # graafdiepte als de zone er geen geeft
+  haag_plants_per_lm: 4            # haagplanten per strekkende meter
+
+# measure: area | length | count | volume | per_zone
+# scope: terras, gazon, beplanting, graafwerk of 'always'
+posts:
+  - code: graafwerk
+    label: Graafwerk en afvoer grond
+    measure: volume
+    applies_to: [terras, oprit, vijver]
+    scope: graafwerk
+  - code: fundering_stabilise
+    label: Fundering in stabilisé
+    measure: volume
+    depth_param: terras_fundering_depth_m
+    applies_to: [terras, oprit]
+    scope: terras
+  - code: terras_tegels
+    label: Terrastegels leggen (incl. voegen)
+    measure: area
+    applies_to: [terras]
+    scope: terras
+  - code: oprit_klinkers
+    label: Klinkers oprit (incl. opsluiting)
+    measure: area
+    applies_to: [oprit]
+    scope: terras
+  - code: gazon_aanleg
+    label: Gazon aanleggen (frezen, egaliseren, inzaaien)
+    measure: area
+    applies_to: [gazon]
+    scope: gazon
+  - code: haag
+    label: Haag aanplanten
+    measure: length
+    applies_to: [haag]
+    scope: beplanting
+  - code: beplanting
+    label: Beplanting borders (incl. grondverbetering)
+    measure: count
+    applies_to: [border]
+    scope: beplanting
+  - code: werf
+    label: Werfinrichting, machines en opkuis
+    measure: per_zone
+    applies_to: [terras, oprit, gazon]
+    scope: always
+
+# VOORBEELDPRIJZEN — pas aan in de configuratie.
+default_prices:
+  hourly_rate: 48.0
+  margin_pct: 12.0
+  waste_pct: 8.0
+  vat_pct: 21.0
+  vat_label: "Btw 21 %"
+  validity_days: 30
+  round_hours_to: 0.5
+  items:
+    - { code: graafwerk, label: "Graafwerk en afvoer grond", unit: m3, material_price: 25.00, hours_per_unit: 0.80 }
+    - { code: fundering_stabilise, label: "Fundering in stabilisé", unit: m3, material_price: 95.00, hours_per_unit: 1.20 }
+    - { code: terras_tegels, label: "Terrastegels 60x60 (incl. voegen)", unit: m2, material_price: 38.00, hours_per_unit: 0.90 }
+    - { code: oprit_klinkers, label: "Klinkers oprit (incl. opsluiting)", unit: m2, material_price: 42.00, hours_per_unit: 1.00 }
+    - { code: gazon_aanleg, label: "Gazon aanleggen (frezen, egaliseren, inzaaien)", unit: m2, material_price: 2.50, hours_per_unit: 0.15 }
+    - { code: haag, label: "Haagplanten (4 per lm)", unit: lm, material_price: 4.50, material_unit: stuk, coverage: 0.25, hours_per_unit: 0.30 }
+    - { code: beplanting, label: "Beplanting borders", unit: stuk, material_price: 9.00, hours_per_unit: 0.20 }
+    - { code: werf, label: "Werfinrichting, machines en opkuis", unit: ruimte, material_price: 40.00, hours_per_unit: 1.00 }

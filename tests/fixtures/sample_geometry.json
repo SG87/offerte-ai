@@ -1,0 +1,67 @@
+{
+  "source": "manual",
+  "scale_confirmed": true,
+  "scale_note": "1:50 uit titelblok",
+  "default_height_m": 2.6,
+  "zones": [
+    {
+      "id": "living",
+      "name": "Living",
+      "kind": "ruimte",
+      "area_m2": 28.4,
+      "perimeter_m": 21.6,
+      "height_m": 2.6,
+      "openings": [
+        { "kind": "raam", "width_m": 1.8, "height_m": 1.4, "count": 2 },
+        { "kind": "deur", "width_m": 0.83, "height_m": 2.04, "count": 1 }
+      ],
+      "polygon": [[0, 0], [6.3, 0], [6.3, 4.5], [0, 4.5]]
+    },
+    {
+      "id": "keuken",
+      "name": "Keuken",
+      "kind": "ruimte",
+      "area_m2": 14.2,
+      "perimeter_m": 15.2,
+      "openings": [
+        { "kind": "raam", "width_m": 1.2, "height_m": 1.2, "count": 1 },
+        { "kind": "deur", "width_m": 0.83, "height_m": 2.04, "count": 1 }
+      ],
+      "tags": ["vochtig"],
+      "polygon": [[6.3, 0], [10.3, 0], [10.3, 3.55], [6.3, 3.55]]
+    },
+    {
+      "id": "hal",
+      "name": "Hal",
+      "kind": "ruimte",
+      "area_m2": 6.1,
+      "perimeter_m": 10.4,
+      "openings": [{ "kind": "deur", "width_m": 0.83, "height_m": 2.04, "count": 3 }],
+      "polygon": [[6.3, 3.55], [8.8, 3.55], [8.8, 6.0], [6.3, 6.0]]
+    },
+    {
+      "id": "badkamer",
+      "name": "Badkamer",
+      "kind": "ruimte",
+      "area_m2": 5.8,
+      "perimeter_m": 9.8,
+      "openings": [{ "kind": "deur", "width_m": 0.73, "height_m": 2.04, "count": 1 }],
+      "tags": ["vochtig"],
+      "in_scope": false,
+      "polygon": [[8.8, 3.55], [10.3, 3.55], [10.3, 7.4], [8.8, 7.4]]
+    },
+    {
+      "id": "slaapkamer1",
+      "name": "Slaapkamer 1",
+      "kind": "ruimte",
+      "area_m2": 16.0,
+      "perimeter_m": 16.0,
+      "openings": [
+        { "kind": "raam", "width_m": 1.4, "height_m": 1.2, "count": 1 },
+        { "kind": "deur", "width_m": 0.83, "height_m": 2.04, "count": 1 }
+      ],
+      "polygon": [[0, 4.5], [6.3, 4.5], [6.3, 7.4], [0, 7.4]]
+    }
+  ],
+  "assumptions": []
+}

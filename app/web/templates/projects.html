@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Projecten · Offerte-AI{% endblock %}
+{% block content %}
+<div class="row">
+  <div class="col wide">
+    <h1>Projecten</h1>
+    <p class="lead">Elke klus is een project: plan → meetstaat → offerte.</p>
+    <div class="card">
+      {% if projects %}
+      <table>
+        <thead><tr><th>Project</th><th>Klant</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+        {% for p in projects %}
+        <tr><td><a href="/projects/{{ p.id }}">{{ p.name }}</a></td><td>{{ p.client_name or '—' }}</td><td><span class="tag">{{ p.status }}</span></td>
+          <td class="num"><a class="btn sm" href="/projects/{{ p.id }}">Open</a>{% if p.status == 'offerte' %} <a class="btn sm" href="/projects/{{ p.id }}/offerte">Offerte</a>{% endif %}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% else %}<p class="muted">Nog geen projecten. Maak er rechts één aan.</p>{% endif %}
+    </div>
+  </div>
+  <div class="col">
+    <div class="card">
+      <h2>Nieuw project</h2>
+      <form method="post" action="/projects">
+        <div class="field"><label class="lbl" for="name">Naam</label><input id="name" name="name" required placeholder="bv. Binnenschilderwerk gelijkvloers"></div>
+        <div class="field"><label class="lbl" for="client_name">Klant</label><input id="client_name" name="client_name"></div>
+        <div class="field"><label class="lbl" for="client_address">Werfadres</label><input id="client_address" name="client_address"></div>
+        <div class="field"><label class="lbl" for="work_type">Type werk (btw)</label>
+          <select id="work_type" name="work_type">{% for k, v in work_types.items() %}<option value="{{ k }}">{{ v[0] }}</option>{% endfor %}</select></div>
+        <fieldset style="border:1px solid var(--line);border-radius:8px;padding:10px;margin:0 0 12px"><legend class="lbl">Scope</legend>
+          {% for s in scopes %}<label style="display:inline-flex;gap:6px;align-items:center;margin-right:14px"><input type="checkbox" name="scope" value="{{ s }}" {{ 'checked' if loop.index <= 2 else '' }}>{{ s }}</label>{% endfor %}
+        </fieldset>
+        <div class="field"><label class="lbl" for="notes">Opmerkingen voor de AI</label><textarea id="notes" name="notes" placeholder="bv. Badkamer niet meenemen; plafonds 2,80 m"></textarea></div>
+        <button class="btn primary" type="submit">Project aanmaken</button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,81 @@
+# Basis-skill SCHILDER — rekenregels die de engine deterministisch toepast.
+# Gebruikers overschrijven dit via hun eigen "aanvullingen" (zie app/schemas.py: Adjustment).
+sector: schilder
+label: Schilder
+version: "1.0"
+zone_kinds: [ruimte]
+
+params:
+  layers_default: 2            # standaard aantal lagen
+  opening_deduct_min_m2: 1.0   # openingen kleiner dan dit worden niet afgetrokken
+  reveal_depth_m: 0.15         # dagkantdiepte (wordt bijgeteld voor ramen en deuren)
+  default_height_m: 2.60       # plafondhoogte als het plan er geen geeft -> aanname
+  high_ceiling_threshold_m: 2.80
+  high_ceiling_hours_factor: 1.20   # +20 % uren boven de drempel (stelling)
+
+# measure: wall_net | ceiling | floor | perimeter_minus_doors | doors_count | windows_count | per_zone
+# scope: moet in de project-scope zitten (muren, plafonds, houtwerk, buiten) of 'always'
+posts:
+  - code: voorbereiding
+    label: Voorbereiding (plamuren, schuren, ontvetten)
+    measure: wall_net
+    applies_to: [ruimte]
+    scope: muren
+    layers: 1
+  - code: muurverf
+    label: Muurverf acryl mat
+    measure: wall_net
+    applies_to: [ruimte]
+    scope: muren
+    layers: layers_default
+    height_factor: true
+  - code: muurverf_vochtwerend
+    label: Muurverf vochtwerend (keuken/badkamer)
+    measure: wall_net
+    applies_to: [ruimte]
+    scope: muren
+    condition_tag: vochtig       # enkel voor ruimtes met tag 'vochtig'
+    replaces: muurverf           # ... en dan vervalt de gewone muurverf
+    layers: layers_default
+    height_factor: true
+  - code: plafondverf
+    label: Plafondverf
+    measure: ceiling
+    applies_to: [ruimte]
+    scope: plafonds
+    layers: layers_default
+    height_factor: true
+  - code: lak_deuren
+    label: Lakwerk binnendeuren (2 zijden, incl. kader)
+    measure: doors_count
+    applies_to: [ruimte]
+    scope: houtwerk
+  - code: plinten
+    label: Lakwerk plinten
+    measure: perimeter_minus_doors
+    applies_to: [ruimte]
+    scope: houtwerk
+  - code: afdekken
+    label: Afdekken, opkuis en afvoer
+    measure: per_zone
+    applies_to: [ruimte]
+    scope: always
+
+# VOORBEELDPRIJZEN — worden bij onboarding gekopieerd naar de configuratie van de gebruiker.
+# material_price is per material_unit; coverage = eenheden per material_unit per laag.
+default_prices:
+  hourly_rate: 45.0
+  margin_pct: 15.0
+  waste_pct: 10.0
+  vat_pct: 6.0
+  vat_label: "Btw 6 % (renovatie woning > 10 jaar)"
+  validity_days: 30
+  round_hours_to: 0.5
+  items:
+    - { code: voorbereiding, label: "Voorbereiding (plamuren, schuren, ontvetten)", unit: m2, material_price: 0.80, hours_per_unit: 0.10 }
+    - { code: muurverf, label: "Muurverf acryl mat", unit: m2, material_price: 9.50, material_unit: l, coverage: 8.0, hours_per_unit: 0.06, hours_scale_with_layers: true }
+    - { code: muurverf_vochtwerend, label: "Muurverf vochtwerend", unit: m2, material_price: 14.00, material_unit: l, coverage: 7.0, hours_per_unit: 0.07, hours_scale_with_layers: true }
+    - { code: plafondverf, label: "Plafondverf", unit: m2, material_price: 9.00, material_unit: l, coverage: 8.0, hours_per_unit: 0.08, hours_scale_with_layers: true }
+    - { code: lak_deuren, label: "Lakwerk binnendeur (2 zijden, incl. kader)", unit: stuk, material_price: 12.00, hours_per_unit: 1.50 }
+    - { code: plinten, label: "Lakwerk plinten", unit: lm, material_price: 0.60, hours_per_unit: 0.15 }
+    - { code: afdekken, label: "Afdekken, opkuis en afvoer", unit: ruimte, material_price: 8.00, hours_per_unit: 0.75 }

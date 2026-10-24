@@ -1,0 +1,39 @@
+# Generieke skill — wordt gebruikt wanneer de sector van de gebruiker nog niet in het platform zit.
+# Alles wordt gemeten in m², lm en stuks; de gebruiker vult zelf posten en prijzen in.
+sector: generiek
+label: Andere sector (generiek)
+version: "1.0"
+zone_kinds: [ruimte, andere]
+
+params:
+  default_height_m: 2.60
+  opening_deduct_min_m2: 1.0
+  reveal_depth_m: 0.0
+
+posts:
+  - code: werk_m2
+    label: Werk per m² (vloer/zone-oppervlak)
+    measure: area
+    applies_to: ["*"]
+    scope: always
+  - code: werk_lm
+    label: Werk per strekkende meter (omtrek)
+    measure: perimeter_minus_doors
+    applies_to: [ruimte]
+    scope: always
+  - code: werk_stuk
+    label: Werk per stuk
+    measure: count
+    applies_to: ["*"]
+    scope: always
+
+default_prices:
+  hourly_rate: 45.0
+  margin_pct: 15.0
+  waste_pct: 5.0
+  vat_pct: 21.0
+  vat_label: "Btw 21 %"
+  items:
+    - { code: werk_m2, label: "Werk per m²", unit: m2, material_price: 0.0, hours_per_unit: 0.25 }
+    - { code: werk_lm, label: "Werk per lm", unit: lm, material_price: 0.0, hours_per_unit: 0.20 }
+    - { code: werk_stuk, label: "Werk per stuk", unit: stuk, material_price: 0.0, hours_per_unit: 0.50 }

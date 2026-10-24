@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Configuratie · Offerte-AI{% endblock %}
+{% block content %}
+<h1>Configuratie</h1>
+<p class="lead">Prijzen, uurtarief en rekenregels. Elke wijziging wordt een nieuwe versie; bestaande offertes blijven op hun versie.</p>
+<form method="post" action="/config">
+<div class="row">
+  <div class="col wide">
+    <div class="card">
+      <h2>Prijslijst &amp; rendement <span class="tag">v{{ cfg.version }}</span></h2>
+      <div class="scroll">
+      <table>
+        <thead><tr><th>Post</th><th>Eenheid</th><th>Materiaal €</th><th>Per</th><th>Rendement</th><th>Uren/eenh.</th></tr></thead>
+        <tbody>
+        {% for it in cfg.items %}
+        <tr>
+          <td><input class="sm" name="label_{{ it.code }}" value="{{ it.label }}"></td>
+          <td>{{ it.unit }}</td>
+          <td style="width:110px"><input class="sm" name="price_{{ it.code }}" value="{{ it.material_price }}"></td>
+          <td>{{ it.material_unit or it.unit }}</td>
+          <td style="width:110px">{% if it.coverage %}<input class="sm" name="coverage_{{ it.code }}" value="{{ it.coverage }}" title="eenheden per {{ it.material_unit }} per laag">{% else %}—{% endif %}</td>
+          <td style="width:90px"><input class="sm" name="hours_{{ it.code }}" value="{{ it.hours_per_unit }}" title="{{ 'per laag' if it.hours_scale_with_layers else 'totaal' }}"></td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      </div>
+      <div class="grid" style="margin-top:16px">
+        <div><label class="lbl" for="hourly_rate">Uurtarief (excl. btw)</label><input id="hourly_rate" name="hourly_rate" value="{{ cfg.hourly_rate }}"></div>
+        <div><label class="lbl" for="margin_pct">Marge op materiaal %</label><input id="margin_pct" name="margin_pct" value="{{ cfg.margin_pct }}"></div>
+        <div><label class="lbl" for="waste_pct">Verlies / snijafval %</label><input id="waste_pct" name="waste_pct" value="{{ cfg.waste_pct }}"></div>
+        <div><label class="lbl" for="vat_pct">Btw standaard %</label><input id="vat_pct" name="vat_pct" value="{{ cfg.vat_pct }}"></div>
+        <div><label class="lbl" for="vat_label">Btw-vermelding</label><input id="vat_label" name="vat_label" value="{{ cfg.vat_label }}"></div>
+        <div><label class="lbl" for="validity_days">Geldigheid (dagen)</label><input id="validity_days" name="validity_days" value="{{ cfg.validity_days }}"></div>
+      </div>
+      <p class="muted" style="font-size:13px;margin-top:10px">Importeren uit CSV / leverancierslijst en koppeling boekhouding: placeholders voor later.</p>
+    </div>
+    <div class="card">
+      <h2>API &amp; MCP</h2>
+      <p style="font-size:14px">API-key voor integraties (header <code>X-API-Key</code>): <code>{{ org.api_key }}</code> — documentatie op <a href="/docs">/docs</a>.</p>
+      <p style="font-size:14px">MCP-server: lokaal via <code>python -m app.mcp_server</code> (stdio) of op <code>/mcp</code> van deze server (streamable HTTP). Zie README.</p>
+    </div>
+  </div>
+  <div class="col">
+    <div class="card">
+      <h2>Sector-skill · {{ skill.label }} <span class="tag">basis v{{ skill.version }}{% if override %} · jouw v{{ override.version }}{% endif %}</span></h2>
+      <p class="muted" style="font-size:14px">De basisregels onderhouden wij per sector (bestand <code>skills/{{ skill.sector }}/rules.yaml</code>). Jouw aanvullingen gaan voor op de basis.</p>
+      <details><summary>Basisregels (alleen-lezen)</summary><pre>{{ skill_rules }}</pre></details>
+      <div class="field" style="margin-top:12px">
+        <label class="lbl" for="override_text">Jouw aanvullingen (gewone taal)</label>
+        <textarea id="override_text" name="override_text" rows="8" placeholder="- Keukens en badkamers altijd vochtwerend.
+- Boven 2,80 m plafondhoogte: 20 % meer uren.
+- Badkamer niet meenemen tenzij gevraagd.">{{ override.free_text if override else '' }}</textarea>
+      </div>
+      {% if override and override.adjustments %}
+      <details><summary>Vertaald naar {{ override.adjustments|length }} regels ({{ override.translated_by }})</summary>
+        <pre>{{ override.adjustments | tojson(indent=2) }}</pre></details>
+      {% endif %}
+      {% if not ai_enabled %}<p class="muted" style="font-size:13px">Zonder API-key worden enkel eenvoudige zinnen herkend (lagen, 'niet meenemen', 'vochtwerend', 'boven X m … Y %').</p>{% endif %}
+    </div>
+    <div class="actions"><button class="btn primary" type="submit">Bewaar als nieuwe versie</button><a class="btn" href="/projects">Naar projecten</a></div>
+  </div>
+</div>
+</form>
+{% endblock %}
