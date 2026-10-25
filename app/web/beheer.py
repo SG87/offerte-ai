@@ -7,11 +7,12 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, Form, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlmodel import Session, select
 
-from app import planning, services, todos, workflow
+from app import ai_jobs, imports, planning, services, todos, workflow
+from app.ai import import_mapping
 from app.db import get_session
 from app.engine import load_skill
 from app.i18n import LANGUAGES
@@ -24,11 +25,12 @@ from app.models import (
     PlanningItem,
     Project,
     PurchaseOrder,
+    StockImportRow,
     StockReservation,
     Supplier,
     Todo,
 )
-from app.web.routes import _f, _flash, _render, _require, current_org
+from app.web.routes import _ai_started, _f, _flash, _render, _require, current_org
 
 router = APIRouter(include_in_schema=False)
 MONTHS = ["januari", "februari", "maart", "april", "mei", "juni", "juli", "augustus", "september", "oktober", "november", "december"]
@@ -82,6 +84,7 @@ KINDS: dict[str, Kind] = {
             ("phone", "Telefoon", "tel"),
             ("address", "Adres", "text"),
             ("vat_number", "Btw-nummer", "text"),
+            ("website", "Website", "url"),
             ("notes", "Notities", "textarea"),
         ],
         ["name", "kind", "language", "contact_name", "email", "phone", "address"],
@@ -99,6 +102,8 @@ KINDS: dict[str, Kind] = {
             ("email", "E-mail voor bestellingen", "email"),
             ("phone", "Telefoon", "tel"),
             ("address", "Adres", "text"),
+            ("vat_number", "Btw-nummer", "text"),
+            ("website", "Website", "url"),
             ("customer_number", "Ons klantnummer", "text"),
             ("lead_days", "Levertermijn (dagen)", "number"),
             ("notes", "Notities", "textarea"),
@@ -132,11 +137,21 @@ KINDS: dict[str, Kind] = {
 }
 
 
-def _rows(session: Session, org: Organisation, kind: Kind, show_inactive: bool):
+def _rows(session: Session, org: Organisation, kind: Kind, show_inactive: bool, review_only: bool = False):
     q = select(kind.model).where(kind.model.org_id == org.id)
     if not show_inactive:
         q = q.where(kind.model.active == True)  # noqa: E712
+    if review_only and hasattr(kind.model, "needs_review"):
+        q = q.where(kind.model.needs_review == True)  # noqa: E712
     return list(session.exec(q.order_by(kind.model.name)).all())
+
+
+def _review_count(session: Session, org: Organisation, kind: Kind) -> int:
+    if not hasattr(kind.model, "needs_review"):
+        return 0
+    return len(session.exec(select(kind.model.id).where(
+        kind.model.org_id == org.id, kind.model.needs_review == True, kind.model.active == True  # noqa: E712
+    )).all())
 
 
 @router.get("/contacten")
@@ -150,6 +165,7 @@ def contacten(
     kind_key: str,
     edit: int | None = None,
     inactief: int = 0,
+    review: int = 0,
     org: Organisation | None = Depends(current_org),
     session: Session = Depends(get_session),
 ):
@@ -169,8 +185,12 @@ def contacten(
         kinds=KINDS,
         kind_key=kind_key,
         kind=kind,
-        rows=_rows(session, org, kind, bool(inactief)),
+        rows=_rows(session, org, kind, bool(inactief), bool(review)),
         editing=editing,
+        review_only=bool(review),
+        review_count=_review_count(session, org, kind),
+        ai_kind=kind_key in imports.MODELS,
+        busy=ai_jobs.running(session, org, kind="contact") + ai_jobs.running(session, org, kind="import"),
         defaults={**kind.defaults, **({"language": org.language} if kind.model is Customer else {})},
         show_inactive=bool(inactief),
         color_of=planning.employee_color,
@@ -217,9 +237,81 @@ async def contacten_post(
             elif name == "vat_number" and value:
                 value = value.replace(" ", "").replace(".", "").upper()
         setattr(row, name, value)
+    if getattr(row, "needs_review", False):  # saved through the form = checked by the user
+        row.needs_review, row.review_note = False, None
     session.add(row)
     session.commit()
     _flash(request, f"{kind.singular} bewaard.")
+    return RedirectResponse(f"/contacten/{kind_key}", status_code=303)
+
+
+@router.post("/contacten/{kind_key}/ai-zoek")
+def contacten_ai_lookup(
+    request: Request,
+    kind_key: str,
+    background: BackgroundTasks,
+    query: str = Form(""),
+    org: Organisation | None = Depends(current_org),
+    session: Session = Depends(get_session),
+):
+    """Name or e-mail address -> background lookup that creates the supplier/customer."""
+    if r := _require(request, org):
+        return r
+    query = query.strip()[:200]
+    if kind_key not in imports.MODELS or not query:
+        _flash(request, "Geef een naam of e-mailadres.")
+        return RedirectResponse(f"/contacten/{kind_key}", status_code=303)
+    job, work = imports.start_lookup(session, org, kind_key, query)
+    background.add_task(ai_jobs.run, job.id, work)
+    _ai_started(request, f"We zoeken de gegevens van “{query}” op")
+    return RedirectResponse(f"/contacten/{kind_key}", status_code=303)
+
+
+@router.post("/contacten/{kind_key}/{row_id}/ai-aanvullen")
+def contacten_ai_complete(
+    request: Request,
+    kind_key: str,
+    row_id: int,
+    background: BackgroundTasks,
+    org: Organisation | None = Depends(current_org),
+    session: Session = Depends(get_session),
+):
+    """Fill the empty fields of an existing supplier/customer from its e-mail address or name."""
+    if r := _require(request, org):
+        return r
+    model = imports.MODELS.get(kind_key)
+    row = session.get(model, row_id) if model else None
+    if row is None or row.org_id != org.id:
+        return RedirectResponse(f"/contacten/{kind_key}", status_code=303)
+    job, work = imports.start_lookup(session, org, kind_key, row.email or row.name, row_id=row.id)
+    background.add_task(ai_jobs.run, job.id, work)
+    _ai_started(request, f"We vullen de gegevens van {row.name} aan")
+    return RedirectResponse(f"/contacten/{kind_key}?edit={row.id}", status_code=303)
+
+
+@router.post("/contacten/{kind_key}/import")
+async def contacten_import(
+    request: Request,
+    kind_key: str,
+    background: BackgroundTasks,
+    file: UploadFile = File(...),
+    org: Organisation | None = Depends(current_org),
+    session: Session = Depends(get_session),
+):
+    """Free-format Excel/CSV of suppliers or customers -> background AI mapping."""
+    if r := _require(request, org):
+        return r
+    if kind_key not in imports.MODELS:
+        return RedirectResponse("/contacten/klanten", status_code=303)
+    name = file.filename or "bestand"
+    try:
+        sheets = import_mapping.read_table(await file.read(import_mapping.MAX_BYTES + 1), name)
+    except import_mapping.ImportError_ as exc:
+        _flash(request, f"Import mislukt: {exc}")
+        return RedirectResponse(f"/contacten/{kind_key}", status_code=303)
+    job, work = imports.start_contact_import(session, org, kind_key, name, sheets)
+    background.add_task(ai_jobs.run, job.id, work)
+    _ai_started(request, f"We lezen {name} in")
     return RedirectResponse(f"/contacten/{kind_key}", status_code=303)
 
 
@@ -360,6 +452,9 @@ def _stock_context(session: Session, org: Organisation) -> dict:
         "reservations": by_project,
         "labels": {i.code: i.label for i in cfg.items},
         "managers": todos.responsible(session, org, "stock_manager"),
+        "import_rows": imports.open_stock_rows(session, org),
+        "stocked": [i for i in cfg.items if i.code in tracked],
+        "busy": ai_jobs.running(session, org, kind="import"),
     }
 
 
@@ -403,6 +498,56 @@ async def voorraad_post(
         msg += f" {len(new)} nieuw bestelvoorstel{'' if len(new) == 1 else 'len'}." if new else " Niets onder het bestelpunt."
     _flash(request, msg)
     return RedirectResponse("/voorraad", status_code=303)
+
+
+@router.post("/voorraad/import")
+async def voorraad_import(
+    request: Request,
+    background: BackgroundTasks,
+    file: UploadFile | None = File(None),
+    text: str = Form(""),
+    org: Organisation | None = Depends(current_org),
+    session: Session = Depends(get_session),
+):
+    """A free-format stock list (Excel/CSV) or a line of text ("12 emmers muurverf wit, rek A2")."""
+    if r := _require(request, org):
+        return r
+    if file is not None and file.filename:
+        source = file.filename
+        try:
+            sheets = import_mapping.read_table(await file.read(import_mapping.MAX_BYTES + 1), source)
+        except import_mapping.ImportError_ as exc:
+            _flash(request, f"Import mislukt: {exc}")
+            return RedirectResponse("/voorraad", status_code=303)
+    elif text.strip():
+        source, sheets = "snelle invoer", imports.text_as_sheet(text[:5000])
+    else:
+        _flash(request, "Kies een bestand of typ wat er in voorraad is.")
+        return RedirectResponse("/voorraad", status_code=303)
+    job, work = imports.start_stock_import(session, org, source, sheets)
+    background.add_task(ai_jobs.run, job.id, work)
+    _ai_started(request, "We verwerken je voorraadlijst" if source != "snelle invoer" else "We verwerken je invoer")
+    return RedirectResponse("/voorraad", status_code=303)
+
+
+@router.post("/voorraad/import/{row_id}/{action}")
+async def voorraad_import_row(
+    request: Request,
+    row_id: int,
+    action: str,
+    org: Organisation | None = Depends(current_org),
+    session: Session = Depends(get_session),
+):
+    if r := _require(request, org):
+        return r
+    row = session.get(StockImportRow, row_id)
+    if row is None or row.org_id != org.id or row.status != "open" or action not in ("toepassen", "negeer"):
+        return RedirectResponse("/voorraad", status_code=303)
+    form = await request.form()
+    qty = _f(form.get("qty"), -1.0) if form.get("qty") not in (None, "") else None
+    ok, msg = imports.resolve_stock_row(session, org, row, action, code=form.get("code"), qty=qty)
+    _flash(request, msg)
+    return RedirectResponse("/voorraad" + ("" if ok else "#na-te-kijken"), status_code=303)
 
 
 def _order(session: Session, org: Organisation, order_id: int) -> PurchaseOrder | None:

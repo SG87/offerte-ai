@@ -22,6 +22,7 @@ from app.web.account import router as account_router
 from app.web.agent import router as agent_router
 from app.web.beheer import router as beheer_router
 from app.web.facturen import router as facturen_router
+from app.web.feedback import router as feedback_router
 from app.web.klant import router as klant_router
 from app.web.leverancier import router as leverancier_router
 from app.web.routes import router as web_router
@@ -60,6 +61,7 @@ app.include_router(api_router, prefix="/api/v1")
 app.include_router(web_router)
 app.include_router(beheer_router)
 app.include_router(facturen_router)
+app.include_router(feedback_router)
 app.include_router(account_router)
 app.include_router(agent_router)
 app.include_router(klant_router)

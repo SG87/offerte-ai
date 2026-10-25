@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Voorraad · Offerte-AI{% endblock %}
+{% block watch %}kind:import{% endblock %}
 {% block content %}
 {% set proposals = orders|selectattr('status', 'equalto', 'voorstel')|list %}
 {% set placed = orders|selectattr('status', 'equalto', 'besteld')|list %}
@@ -49,6 +50,49 @@
   </div>
 </section>
 {% endif %}
+
+{% if busy %}
+<div class="ai-working"><span class="ring"></span><div><strong>AI is bezig</strong><span class="muted small">{{ busy|map(attribute='title')|join(' · ') }}. De pagina ververst vanzelf.</span></div></div>
+{% endif %}
+
+{% if import_rows %}
+<section class="card" id="na-te-kijken">
+  <div class="card-head"><div class="card-title"><h2>Na te kijken uit import</h2><span class="count warn">{{ import_rows|length }}</span></div></div>
+  <p class="muted small" style="margin:0 0 10px">Deze regels hebben we niet toegepast: het materiaal of de hoeveelheid was niet zeker. Kies het materiaal, controleer de hoeveelheid en pas toe, of negeer de regel.</p>
+  <ul class="import-rows">
+    {% for ir in import_rows %}
+    <li>
+      <div class="raw">{{ ir.raw or '—' }}</div>
+      <div class="small warn-text" style="margin-top:4px">{{ ir.note }}</div>
+      <div class="muted small">uit {{ ir.source }}{% if ir.supplier_name %} · leverancier {{ ir.supplier_name }}{% endif %}{% if ir.location %} · {{ ir.location }}{% endif %}</div>
+      <form method="post" action="/voorraad/import/{{ ir.id }}/toepassen">
+        <select name="code" class="sm" aria-label="Materiaal"><option value="">— kies materiaal —</option>{% for it in stocked %}<option value="{{ it.code }}" {{ 'selected' if it.code == ir.code else '' }}>{{ it.label }} ({{ it.material_unit or it.unit }})</option>{% endfor %}</select>
+        <input class="sm num" name="qty" value="{{ ir.qty|qty if ir.qty is not none else '' }}" placeholder="aantal" aria-label="Hoeveelheid">
+        <button class="btn sm primary" type="submit">Toepassen</button>
+        <button class="btn sm ghost" type="submit" formaction="/voorraad/import/{{ ir.id }}/negeer">Negeer</button>
+      </form>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+<section class="card assist">
+  <div class="card-head"><div class="card-title"><h2><span class="ai-spark" aria-hidden="true">✦</span> Voorraad invoeren met AI</h2></div></div>
+  <div class="grid two">
+    <form method="post" action="/voorraad/import" class="stack" style="margin-top:0">
+      <label class="lbl" for="stock-text">Typ wat er ligt</label>
+      <textarea id="stock-text" name="text" rows="2" maxlength="5000" placeholder="bv. 12 emmers muurverf wit van 10 l, rek A2, bestellen bij Verfcentrale onder 40 l"></textarea>
+      <button class="btn primary" type="submit">Verwerk</button>
+    </form>
+    <form method="post" action="/voorraad/import" enctype="multipart/form-data" class="stack" style="margin-top:0">
+      <label class="lbl" for="stock-file">Of importeer een lijst (Excel/CSV, vrij formaat)</label>
+      <input id="stock-file" type="file" name="file" accept=".xlsx,.xlsm,.csv" required>
+      <button class="btn" type="submit">Importeer</button>
+    </form>
+  </div>
+  <p class="muted small" style="margin:10px 0 0">De AI koppelt elke regel aan een materiaal hieronder en rekent verpakkingen om naar de juiste eenheid. Zekere regels worden meteen bijgewerkt; de rest komt bij <strong>Na te kijken</strong>. Onbekende leveranciers worden aangemaakt bij Contacten, ook op na te kijken.{% if not ai_enabled %} <span class="warn-text">AI staat uit: enkel lijsten met duidelijke kolomtitels en exacte materiaalnamen worden herkend.</span>{% endif %}</p>
+</section>
 
 <form method="post" action="/voorraad">
 <section class="card">

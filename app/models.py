@@ -213,8 +213,11 @@ class Customer(SQLModel, table=True):
     phone: str | None = None
     address: str | None = None
     vat_number: str | None = None
+    website: str | None = None
     notes: str | None = None
     active: bool = True
+    needs_review: bool = False  # filled in by AI (lookup or import) and not yet checked by the user
+    review_note: str | None = None  # why it needs checking / where the data came from
     created_at: datetime = Field(default_factory=_now)
 
     @property
@@ -231,9 +234,13 @@ class Supplier(SQLModel, table=True):
     phone: str | None = None
     address: str | None = None
     customer_number: str | None = None  # our account number at the supplier
+    vat_number: str | None = None
+    website: str | None = None
     lead_days: int = 3
     notes: str | None = None
     active: bool = True
+    needs_review: bool = False  # filled in by AI (lookup or import) and not yet checked by the user
+    review_note: str | None = None
     created_at: datetime = Field(default_factory=_now)
 
 
@@ -289,6 +296,26 @@ class StockLevel(SQLModel, table=True):
     @property
     def available(self) -> float:
         return round(self.qty - self.reserved, 2)
+
+
+class StockImportRow(SQLModel, table=True):
+    """A row from a stock import (Excel or one line of text) that could not be applied with certainty:
+    unknown material, or values the AI was unsure about. The user picks the material and applies it, or ignores it."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    org_id: int = Field(index=True, foreign_key="organisation.id")
+    source: str  # file name, or "snelle invoer"
+    raw: str  # the original row as text
+    code: str | None = None  # proposed price-list item code
+    qty: float | None = None
+    unit: str | None = None
+    reorder_point: float | None = None
+    pack_size: float | None = None
+    supplier_name: str | None = None
+    location: str | None = None
+    note: str | None = None  # why it needs checking
+    status: str = "open"  # open | toegepast | genegeerd
+    created_at: datetime = Field(default_factory=_now)
 
 
 class StockReservation(SQLModel, table=True):
@@ -384,7 +411,7 @@ class AIJob(SQLModel, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     org_id: int = Field(index=True, foreign_key="organisation.id")
-    kind: str  # bedrijf | plan | assist | skill
+    kind: str  # bedrijf | plan | assist | skill | contact | import
     title: str  # "Plan lezen: Definitief plan.pdf"
     status: str = Field(default="bezig", index=True)  # bezig | klaar | mislukt
     message: str | None = None

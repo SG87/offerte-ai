@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% block title %}Idee of bug melden · Offerte-AI{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Idee of bug melden</h1>
+    <p class="lead" style="margin:0">Mis je iets, of werkt iets niet zoals het hoort? Meld het hier. Wordt je melding gebouwd, dan krijg je <strong>€ {{ credit }} korting</strong> op je volgende factuur.</p>
+  </div>
+</div>
+
+<div class="flash">
+  <strong>Binnenkort beschikbaar.</strong> We bouwen dit op dit moment. Hieronder lees je hoe het zal werken. Tot dan: mail je idee of bug naar <a href="mailto:stijn@recommendit.net">stijn@recommendit.net</a>; die meldingen tellen al mee voor de korting.
+</div>
+
+<section class="card">
+  <h2>Van melding tot live, in één overzicht</h2>
+  <p class="muted small" style="margin:0 0 12px">Drie banen: wat jij doet, wat AI-agenten doen, en waar een mens beslist. Een melding gaat nooit zonder menselijke goedkeuring naar de code, en nooit zonder review naar productie.</p>
+  <div class="flow-wrap">
+    <svg class="flow" viewBox="0 0 1440 400" role="img" aria-labelledby="flow-title" xmlns="http://www.w3.org/2000/svg">
+      <title id="flow-title">Stroom van melding tot release: jij meldt, AI doet triage en schrijft een story, een mens keurt goed, agenten bouwen en testen, een mens reviewt en merget, release om 14 u, jij krijgt bericht en korting.</title>
+      <defs>
+        <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="var(--muted)"/></marker>
+        <marker id="arr-warn" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="var(--warn)"/></marker>
+      </defs>
+      <!-- lanes -->
+      <g class="lanes" font-size="12" font-weight="600" fill="var(--muted)">
+        <rect x="0" y="20" width="1440" height="110" rx="10" fill="var(--bg)"/>
+        <rect x="0" y="145" width="1440" height="110" rx="10" fill="var(--accent-bg)"/>
+        <rect x="0" y="270" width="1440" height="110" rx="10" fill="var(--warn-bg)"/>
+        <text x="14" y="40">JIJ</text>
+        <text x="14" y="165">AI-AGENTEN</text>
+        <text x="14" y="290">MENS (STIJN)</text>
+      </g>
+      <!-- boxes: lane y = 50 (jij), 175 (ai), 300 (mens); box 118x60; step x = 70 + i*140 -->
+      <g class="boxes" font-size="12.5" text-anchor="middle">
+        <!-- 1 melden: jij -->
+        <rect x="70" y="50" width="118" height="60" rx="9"/><text x="129" y="75" class="n">1 · Melden</text><text x="129" y="93" class="s">bug of idee</text>
+        <!-- 2 triage: ai -->
+        <rect x="210" y="175" width="118" height="60" rx="9"/><text x="269" y="200" class="n">2 · Triage</text><text x="269" y="218" class="s">vragen, dubbels</text>
+        <!-- 3 pm: ai -->
+        <rect x="350" y="175" width="118" height="60" rx="9"/><text x="409" y="200" class="n">3 · PM-agent</text><text x="409" y="218" class="s">story, prioriteit</text>
+        <!-- 4 goedkeuring: mens -->
+        <rect x="490" y="300" width="118" height="60" rx="9" class="gate"/><text x="549" y="325" class="n">4 · Goedkeuring</text><text x="549" y="343" class="s">ok / nee / manueel</text>
+        <!-- 5 dev: ai -->
+        <rect x="630" y="175" width="118" height="60" rx="9"/><text x="689" y="200" class="n">5 · Developer</text><text x="689" y="218" class="s">branch + code</text>
+        <!-- 6 test: ai -->
+        <rect x="770" y="175" width="118" height="60" rx="9"/><text x="829" y="200" class="n">6 · Test-agent</text><text x="829" y="218" class="s">security, privacy</text>
+        <!-- 7 e2e: ai -->
+        <rect x="910" y="175" width="118" height="60" rx="9"/><text x="969" y="200" class="n">7 · E2E-agent</text><text x="969" y="218" class="s">surft testomgeving</text>
+        <!-- 8 review: mens -->
+        <rect x="1050" y="300" width="118" height="60" rx="9" class="gate"/><text x="1109" y="325" class="n">8 · Review</text><text x="1109" y="343" class="s">+ merge</text>
+        <!-- 9 release: ai lane -->
+        <rect x="1190" y="175" width="118" height="60" rx="9" class="release"/><text x="1249" y="200" class="n">9 · Release</text><text x="1249" y="218" class="s">werkdagen 14 u</text>
+        <!-- 10 bericht: jij -->
+        <rect x="1330" y="50" width="100" height="60" rx="9" class="win"/><text x="1380" y="75" class="n">10 · Bericht</text><text x="1380" y="93" class="s">+ € {{ credit }}</text>
+      </g>
+      <!-- arrows -->
+      <g class="arrows" fill="none" stroke="var(--muted)" stroke-width="1.6" marker-end="url(#arr)">
+        <path d="M188 80 C 200 80, 200 205, 210 205"/>
+        <path d="M328 205 L 350 205"/>
+        <path d="M468 205 C 480 205, 480 330, 490 330"/>
+        <path d="M608 330 C 620 330, 620 205, 630 205"/>
+        <path d="M748 205 L 770 205"/>
+        <path d="M888 205 L 910 205"/>
+        <path d="M1028 205 C 1040 205, 1040 330, 1050 330"/>
+        <path d="M1168 330 C 1180 330, 1180 205, 1190 205"/>
+        <path d="M1308 205 C 1320 205, 1320 80, 1330 80"/>
+      </g>
+      <!-- feedback loop e2e -> developer -->
+      <g fill="none" stroke="var(--warn)" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#arr-warn)">
+        <path d="M969 235 C 969 262, 689 262, 689 237"/>
+      </g>
+      <text x="829" y="255" font-size="11.5" text-anchor="middle" fill="var(--warn)">breekt er iets? terug naar de developer (max. 2×)</text>
+      <!-- side notes -->
+      <text x="549" y="378" font-size="11.5" text-anchor="middle" fill="var(--muted)">je krijgt bericht bij elke beslissing</text>
+      <text x="129" y="125" font-size="11.5" text-anchor="middle" fill="var(--muted)">bestaat al? stem mee</text>
+    </svg>
+  </div>
+</section>
+
+<div class="row">
+  <div class="col wide">
+    <section class="card">
+      <h2>Stap voor stap</h2>
+      <ol class="flow-steps">
+        {% for lane, title, text in steps %}
+        <li class="lane-{{ lane|lower }}">
+          <span class="who">{{ lane }}</span>
+          <div><strong>{{ title }}</strong><span>{{ text }}</span></div>
+        </li>
+        {% endfor %}
+      </ol>
+    </section>
+  </div>
+  <div class="col side">
+    <section class="card">
+      <h2>De € {{ credit }} korting</h2>
+      <ul class="rules">
+        <li>Je krijgt de korting zodra je melding <strong>live staat</strong>, niet bij goedkeuring.</li>
+        <li>Eén korting per melding, voor wie ze <strong>als eerste</strong> deed. Meldde iemand het al, dan kan je mee-stemmen en krijg je bericht bij release, maar geen korting.</li>
+        <li>Maximaal <strong>{{ max_credits }} kortingen per bedrijf per maand</strong>.</li>
+        <li>Bugs en ideeën tellen evenveel. Afgewezen meldingen en "werkt zoals bedoeld" tellen niet.</li>
+        <li>De korting wordt automatisch van je volgende factuur afgetrokken.</li>
+      </ul>
+    </section>
+    <section class="card">
+      <h2>Wat je nu al kan doen</h2>
+      <p class="small" style="margin:0 0 10px">Mail je bug of idee naar <a href="mailto:stijn@recommendit.net?subject=Offerte-AI%3A%20idee%20of%20bug">stijn@recommendit.net</a>. Zet erbij:</p>
+      <ul class="rules small">
+        <li>wat je deed en op welke pagina,</li>
+        <li>wat je verwachtte en wat er gebeurde,</li>
+        <li>een screenshot als dat helpt.</li>
+      </ul>
+      <p class="muted small" style="margin:10px 0 0">Zet geen klantgegevens in je melding; de backlog wordt zichtbaar voor alle gebruikers.</p>
+    </section>
+  </div>
+</div>
+{% endblock %}

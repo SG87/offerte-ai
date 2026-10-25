@@ -40,6 +40,18 @@ python scripts/demo_quote.py tests/fixtures/sample_geometry.json   # offerte zon
 
 Alle AI-aanroepen in de web-app lopen als achtergrondtaak (`app/ai_jobs.py`): bedrijfsopzoeking bij het aanmaken van een account of via Account → "Opnieuw opzoeken", plan lezen, AI-assist en het vertalen van skill-aanvullingen. Je krijgt een pop-up dat de AI gestart is en kan verder werken op andere pagina's; rechtsboven staat **✦ AI bezig** (klik voor de lijst met timers) en een melding met link zodra het klaar of mislukt is. De pagina waar het resultaat hoort (project, onboarding, configuratie, account) ververst zichzelf. REST-API en MCP blijven synchroon antwoorden.
 
+## Contacten en voorraad invoeren met AI
+
+- **Snel toevoegen** (Contacten → Leveranciers of Klanten): geef een naam of e-mailadres. De AI leest de website van het e-maildomein en zoekt met web search de rest op (adres, btw-nummer, telefoon, website) en maakt het record aan. Bij een bestaand record vult **"Vul lege velden aan met AI"** enkel lege velden in. Bij klanten werkt dit enkel voor **B2B-klanten** (bedrijven): particulieren (gratis mailadres of persoonsnaam) worden nooit op het internet opgezocht en voeg je zelf toe.
+- **Importeer uit Excel** (.xlsx of .csv, vrij formaat, max. 5 MB / 1000 rijen): de AI zet elke rij in het juiste formaat (btw `BE0123456789`, adres "Straat nr, postcode gemeente", B2B/B2C, taal). Bestaande contacten worden op e-mail of naam herkend en enkel aangevuld; afwijkende waarden worden niet overschreven.
+- **Na te kijken**: wat de AI niet zeker weet (confidence < 0,8, ongeldig e-mail- of btw-nummer, afwijking van wat al bewaard was, of geen AI-sleutel) krijgt de markering *na te kijken* met de reden. Filter erop met de tab "Na te kijken"; bewaren via het formulier haalt de markering weg.
+- **Voorraad** (`/voorraad` → "Voorraad invoeren met AI"): typ een zin ("12 emmers muurverf wit van 10 l, rek A2") of importeer een lijst. De AI koppelt elke regel aan een materiaal met *voorraad bijhouden* en rekent verpakkingen om naar de eenheid van de post. Zekere regels worden meteen toegepast; de rest komt in **Na te kijken uit import**, waar je het materiaal kiest en toepast of negeert. Onbekende leveranciers worden aangemaakt bij Contacten, op *na te kijken*.
+- Zonder `ANTHROPIC_API_KEY` werkt de import met herkenbare kolomtitels (Naam, E-mail, Tel., Straat, Postcode, Gemeente, Artikel, Aantal…) en exacte materiaalnamen; alles wat zo binnenkomt via opzoeking staat op *na te kijken*. Code: `app/imports.py`, `app/ai/contact_lookup.py`, `app/ai/import_mapping.py`.
+
+## Idee of bug melden
+
+Knop **💡 Idee of bug** rechtsboven → `/feedback`. Voorlopig een uitlegpagina met het geplande traject (triage door AI, PM-agent, menselijke goedkeuring, developer-/test-/E2E-agenten, release elke werkdag om 14 u) en de kortingsregels: € 20 op de volgende factuur zodra je melding live staat, één korting per melding voor de eerste melder, maximaal 3 per bedrijf per maand. Het volledige plan staat in `docs/agent-factory-plan.md`; het meldformulier zelf komt in fase 3 van dat plan.
+
 ## Account
 
 `/account` (tandwiel rechtsboven): bedrijfsgegevens en login-e-mail, taal en land, contactpersoon aankoop, huisstijl (logo, kleuren), sector (nieuwe prijslijstversie met de standaardprijzen van die sector), gegevens opnieuw ophalen met AI (enkel lege velden, of alles overschrijven), API-sleutel tonen/kopiëren/vernieuwen, en de status van de integraties uit `.env`.

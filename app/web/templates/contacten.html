@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block title %}{{ kind.label }} · Offerte-AI{% endblock %}
+{% block watch %}kind:contact kind:import{% endblock %}
 {% block content %}
 <div class="page-head">
   <div>
@@ -12,8 +13,13 @@
   {% for key, k in kinds.items() %}
   <a href="/contacten/{{ key }}" class="{{ 'on' if key == kind_key else '' }}">{{ k.label }}</a>
   {% endfor %}
+  {% if review_count or review_only %}<a href="/contacten/{{ kind_key }}?review={{ 0 if review_only else 1 }}" class="review-tab {{ 'on' if review_only else '' }}" title="Door AI ingevuld en nog niet gecontroleerd">{{ 'Toon alle' if review_only else 'Na te kijken' }}{% if not review_only %} <span class="count warn">{{ review_count }}</span>{% endif %}</a>{% endif %}
   <a class="right small" href="/contacten/{{ kind_key }}?inactief={{ 0 if show_inactive else 1 }}">{{ 'verberg gearchiveerde' if show_inactive else 'toon gearchiveerde' }}</a>
 </nav>
+
+{% if busy %}
+<div class="ai-working"><span class="ring"></span><div><strong>AI is bezig</strong><span class="muted small">{{ busy|map(attribute='title')|join(' · ') }}. De lijst ververst vanzelf.</span></div></div>
+{% endif %}
 
 <div class="row">
   <div class="col wide">
@@ -32,6 +38,7 @@
             {% if c == 'name' %}
               {% if kind_key == 'werknemers' %}<span class="swatch" style="background:{{ color_of(r) }}"></span><a href="/contacten/werknemers/{{ r.id }}"><strong>{{ r.name }}</strong></a>{% else %}<strong>{{ r.name }}</strong>{% endif %}
               {% if not r.active %}<span class="tag">gearchiveerd</span>{% endif %}
+              {% if r.needs_review %}<a class="tag warn" href="/contacten/{{ kind_key }}?edit={{ r.id }}" title="{{ r.review_note or 'Door AI ingevuld' }}">na te kijken</a>{% endif %}
             {% elif c == 'kind' %}<span class="tag {{ 'accent' if r.kind == 'b2b' else '' }}" title="{{ 'offerte excl. btw' if r.kind == 'b2b' else 'offerte incl. btw' }}">{{ r.kind|upper }}</span>
             {% elif c == 'language' %}<span class="tag">{{ (r.language or 'nl')|upper }}</span>
             {% elif c == 'lead_days' %}{{ r.lead_days }} d
@@ -42,7 +49,7 @@
           </td>
           {% endfor %}
           <td class="num nowrap">
-            <a class="btn sm" href="/contacten/{{ kind_key }}?edit={{ r.id }}{{ '&inactief=1' if show_inactive else '' }}">Bewerk</a>
+            <a class="btn sm" href="/contacten/{{ kind_key }}?edit={{ r.id }}{{ '&inactief=1' if show_inactive else '' }}{{ '&review=1' if review_only else '' }}">{{ 'Controleer' if r.needs_review else 'Bewerk' }}</a>
             <form method="post" action="/contacten/{{ kind_key }}/{{ r.id }}/actief" style="display:inline"><button class="btn sm ghost" type="submit">{{ 'Activeer' if not r.active else 'Archiveer' }}</button></form>
           </td>
         </tr>
@@ -50,13 +57,37 @@
         </tbody>
       </table>
       {% else %}
-      <div class="empty"><strong>Nog geen {{ kind.label|lower }}</strong><span>Voeg er rechts een toe.</span></div>
+      <div class="empty"><strong>{{ 'Niets meer na te kijken' if review_only else 'Nog geen ' + kind.label|lower }}</strong><span>{{ 'Alles is gecontroleerd.' if review_only else 'Voeg er rechts een toe' + (', zoek er een op met AI of importeer een Excel-lijst.' if ai_kind else '.') }}</span></div>
       {% endif %}
     </section>
   </div>
   <div class="col side">
+    {% if ai_kind and not editing %}
+    <section class="card assist">
+      <h2><span class="ai-spark" aria-hidden="true">✦</span> Snel toevoegen met AI</h2>
+      <p class="muted small" style="margin:0 0 10px">Geef een naam of e-mailadres. De AI zoekt de rest op (website, adres, btw-nummer, telefoon) en maakt de {{ kind.singular|lower }} aan. Wat niet zeker is, krijgt <span class="tag warn">na te kijken</span>.</p>
+      {% if kind_key == 'klanten' %}<p class="notice small" style="margin:0 0 10px"><strong>Enkel voor B2B-klanten (bedrijven).</strong> Particulieren zoeken we niet op het internet op: voeg die hieronder zelf toe.</p>{% endif %}
+      <form method="post" action="/contacten/{{ kind_key }}/ai-zoek" class="next-step">
+        <input name="query" required maxlength="200" aria-label="Naam of e-mailadres" placeholder="{{ 'bv. info@verfgroothandel.be of Verfcentrale Gent' if kind_key == 'leveranciers' else 'bv. info@bouwbedrijf.be of Bouwbedrijf Peeters Lier' }}">
+        <button class="btn primary" type="submit">Zoek op</button>
+      </form>
+      {% if not ai_enabled %}<p class="small warn-text" style="margin:8px 0 0">AI staat uit: we maken de {{ kind.singular|lower }} aan met wat je ingeeft, en zetten hem op na te kijken.</p>{% endif %}
+    </section>
+    <section class="card">
+      <h2>Importeer uit Excel</h2>
+      <p class="muted small" style="margin:0 0 10px">Vrij formaat: elke kolomvolgorde, ook meerdere tabbladen of een adres over meerdere kolommen. De AI zet alles in het juiste formaat. Bestaande {{ kind.label|lower }} worden aangevuld, niet verdubbeld. Twijfelgevallen krijgen <span class="tag warn">na te kijken</span>.</p>
+      <form method="post" action="/contacten/{{ kind_key }}/import" enctype="multipart/form-data" class="stack" style="margin-top:0">
+        <input type="file" name="file" accept=".xlsx,.xlsm,.csv" required aria-label="Excel- of CSV-bestand">
+        <button class="btn" type="submit">Importeer</button>
+      </form>
+      <p class="muted small" style="margin:8px 0 0">.xlsx of .csv, max. 5 MB en 1000 rijen.</p>
+    </section>
+    {% endif %}
     <section class="card">
       <h2>{{ (kind.singular + ' bewerken') if editing else ('Nieuwe ' + kind.singular|lower) }}</h2>
+      {% if editing and editing.needs_review %}
+      <div class="notice warn small"><strong>Na te kijken.</strong> {{ editing.review_note or 'Door AI ingevuld.' }}<br>Controleer de gegevens en klik op Bewaar: dan verdwijnt de markering.</div>
+      {% endif %}
       <form method="post" action="/contacten/{{ kind_key }}">
         {% if editing %}<input type="hidden" name="id" value="{{ editing.id }}">{% endif %}
         {% for f in kind.fields %}
@@ -74,6 +105,7 @@
           {% if ftype == 'textarea' %}<textarea id="f_{{ name }}" name="{{ name }}" rows="3">{{ val or '' }}</textarea>
           {% elif ftype == 'select' %}<select id="f_{{ name }}" name="{{ name }}">{% for o in f[4] %}{% set o = (o, o) if o is string else o %}<option value="{{ o[0] }}" {{ 'selected' if o[0] == val else '' }} {{ 'disabled' if o|length > 2 and o[2] else '' }}>{{ o[1] }}</option>{% endfor %}</select>
           {% elif ftype == 'color' %}<input id="f_{{ name }}" name="{{ name }}" type="color" value="{{ val or (color_of(editing) if editing else '#1f5fbf') }}">
+          {% elif ftype == 'url' %}<input id="f_{{ name }}" name="{{ name }}" type="url" value="{{ val or '' }}" placeholder="https://">
           {% else %}<input id="f_{{ name }}" name="{{ name }}" type="{{ ftype }}" value="{{ val if val is not none else '' }}" {{ 'required' if f|length > 3 and f[3] else '' }} {{ 'step="0.5" min="0"' if ftype == 'number' else '' }}>{% endif %}
           {% endif %}
         </div>
@@ -83,6 +115,11 @@
           {% if editing %}<a class="btn" href="/contacten/{{ kind_key }}">Annuleer</a>{% endif %}
         </div>
       </form>
+      {% if editing and ai_kind %}
+      <form method="post" action="/contacten/{{ kind_key }}/{{ editing.id }}/ai-aanvullen" style="margin-top:10px">
+        <button class="btn sm ghost" type="submit" title="Zoekt op basis van e-mailadres of naam; vult enkel lege velden in">✦ Vul lege velden aan met AI</button>
+      </form>
+      {% endif %}
     </section>
   </div>
 </div>
