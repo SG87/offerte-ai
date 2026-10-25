@@ -1,11 +1,12 @@
 {% extends "base.html" %}
 {% block title %}Aanmelden · Offerte-AI{% endblock %}
 {% block content %}
-<div class="row" style="justify-content:center">
-  <div class="card" style="flex:0 1 520px">
-    <h1>Welkom bij Offerte-AI</h1>
-    <p class="lead">Plan of foto in, meetstaat en offerte uit. Meld je aan met je <strong>professionele e-mailadres</strong>:
-      voor een nieuw account herkennen we je bedrijf, sector, logo en huisstijl automatisch via je website.</p>
+<div class="auth">
+  <div class="mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M7 3h7l5 5v13H7z M14 3v5h5 M10 13h6 M10 17h4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+  <h1>Welkom bij Offerte-AI</h1>
+  <p class="lead">Plan of foto in, meetstaat en offerte uit.</p>
+  <div class="card">
+    <p class="muted small" style="margin:0 0 18px">Meld je aan met je <strong>professionele e-mailadres</strong>. Voor een nieuw account herkennen we je bedrijf, sector, logo en huisstijl automatisch via je website.</p>
     {% if error %}<div class="flash warn">{{ error }}</div>{% endif %}
     <form method="post" action="/login" id="login-form">
       <div class="field">
@@ -18,8 +19,8 @@
       </div>
       <p class="busy" id="busy" hidden><span class="spinner"></span>Account aanmaken…</p>
     </form>
-    <p class="muted" style="font-size:13px;margin-top:16px">v0.1 — één account per bedrijf, geen wachtwoord in deze ontwikkelversie. Google / Microsoft aanmelden: later.</p>
   </div>
+  <p class="fine">v0.1 — één account per bedrijf, geen wachtwoord in deze ontwikkelversie. Google / Microsoft aanmelden: later.</p>
 </div>
 <script>
   document.getElementById("login-form").addEventListener("submit", (e) => {
