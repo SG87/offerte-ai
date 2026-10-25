@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% block title %}Voorraad · Offerte-AI{% endblock %}
+{% block content %}
+{% set proposals = orders|selectattr('status', 'equalto', 'voorstel')|list %}
+{% set placed = orders|selectattr('status', 'equalto', 'besteld')|list %}
+{% set done = orders|rejectattr('status', 'in', ['voorstel', 'besteld'])|list %}
+<div class="page-head">
+  <div>
+    <h1>Voorraad</h1>
+    <p class="lead" style="margin:0">Wat er ligt, wat beloofd is aan projecten en wat besteld moet worden. Welke posten hier staan, kies je op de <a href="/config">configuratiepagina</a>.</p>
+  </div>
+  <div class="actions">
+    {% if managers %}<span class="muted small">Bevestigt bestellingen: {{ managers|map(attribute='name')|join(', ') }}</span>{% else %}<a class="muted small" href="/contacten/werknemers">Nog geen verantwoordelijke voorraad aangeduid</a>{% endif %}
+  </div>
+</div>
+
+<div class="kpis kpis-4">
+  <div><span>Artikelen</span><strong>{{ rows|length }}</strong></div>
+  <div class="{{ 'warn-tile' if rows|selectattr('status', 'in', ['tekort','bijbestellen'])|list else '' }}"><span>Bij te bestellen</span><strong>{{ rows|selectattr('status', 'in', ['tekort','bijbestellen'])|list|length }}</strong></div>
+  <div class="{{ 'warn-tile' if proposals else '' }}"><span>Te bevestigen</span><strong>{{ proposals|length }}</strong></div>
+  <div><span>Onderweg</span><strong>{{ placed|length }}</strong></div>
+</div>
+
+{% if proposals %}
+<section class="card" id="bevestigen">
+  <div class="card-head"><div class="card-title"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16l-1.5 11h-13zM9 7V5a3 3 0 0 1 6 0v2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg></span><h2>Bestelvoorstellen te bevestigen</h2><span class="count">{{ proposals|length }}</span></div></div>
+  <div class="orders">
+  {% for o in proposals %}
+  {% set sup = suppliers.get(o.supplier_id) %}
+  <article class="order" id="bestelling-{{ o.id }}">
+    <header>
+      <div><strong>{{ o.number }}</strong> · {{ o.created_at.strftime('%d/%m/%Y') }}
+        {% if sup %}<span class="chip">{{ sup.name }}{% if not sup.email %} · geen e-mail{% endif %}</span>{% else %}<span class="tag warn">geen leverancier</span>{% endif %}</div>
+      <span class="st-pill">voorstel</span>
+    </header>
+    <table class="list compact"><tbody>
+      {% for ln in order_lines[o.id] %}<tr><td>{{ ln.label }}</td><td class="num"><strong>{{ ln.qty|qty }}</strong> {{ ln.unit or '' }}</td><td class="muted">{{ ln.reason }}{% if ln.project_id in projects %} · <a href="/projects/{{ ln.project_id }}">{{ projects[ln.project_id].name }}</a>{% endif %}</td></tr>{% endfor %}
+    </tbody></table>
+    <div class="actions order-actions">
+      <form method="post" action="/voorraad/bestellingen/{{ o.id }}/leverancier" class="actions">
+        <select name="supplier_id" class="sm" style="width:auto;min-width:200px"><option value="">— leverancier —</option>{% for s in active_suppliers %}<option value="{{ s.id }}" {{ 'selected' if s.id == o.supplier_id else '' }}>{{ s.name }}{{ '' if s.email else ' (geen e-mail)' }}</option>{% endfor %}</select>
+        <button class="btn sm" type="submit">Koppel</button>
+      </form>
+      <form method="post" action="/voorraad/bestellingen/{{ o.id }}/bevestig"><button class="btn primary" type="submit" {{ '' if sup and sup.email else 'disabled title="Kies eerst een leverancier met e-mailadres"' }}>Bevestig en bestel bij {{ sup.name if sup else 'leverancier' }} →</button></form>
+      <form method="post" action="/voorraad/bestellingen/{{ o.id }}/annuleer"><button class="btn sm ghost danger" type="submit">Annuleer</button></form>
+    </div>
+  </article>
+  {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+<form method="post" action="/voorraad">
+<section class="card">
+  <div class="card-head">
+    <div class="card-title"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9l9-5 9 5v10l-9 5-9-5zM3 9l9 5 9-5M12 14v10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg></span><h2>Materialen</h2></div>
+    <div class="actions">
+      <button class="btn" type="submit" name="check" value="1" title="Maakt bestelvoorstellen voor alles onder het bestelpunt">Controleer bestelpunten</button>
+      <button class="btn primary" type="submit">Bewaar voorraad</button>
+    </div>
+  </div>
+  {% if rows %}
+  <div class="scroll table-wrap">
+  <table class="zones stock">
+    <thead><tr><th>Materiaal</th><th>Status</th><th class="num">In voorraad</th><th class="num">Gereserveerd</th><th class="num">Beschikbaar</th><th class="num">Besteld</th><th class="num">Bestelpunt</th><th class="num">Verpakking</th><th>Leverancier</th><th>Locatie</th></tr></thead>
+    <tbody>
+    {% for r in rows %}
+    {% set lv = r.level %}
+    <tr class="st-{{ r.status }}">
+      <td><strong>{{ r.item.label }}</strong><br><span class="muted small">{{ r.item.code }}</span></td>
+      <td><span class="st-pill stock-{{ r.status }}">{{ {'ok':'ok','bijbestellen':'bij te bestellen','tekort':'tekort','besteld':'besteld'}[r.status] }}</span></td>
+      <td class="num"><span class="with-unit"><input class="sm num" name="qty_{{ r.item.code }}" value="{{ lv.qty|qty }}"><span>{{ r.unit }}</span></span></td>
+      <td class="num">{{ lv.reserved|qty }}</td>
+      <td class="num"><strong class="{{ 'neg' if lv.available < 0 else '' }}">{{ lv.available|qty }}</strong></td>
+      <td class="num">{{ r.on_order|qty if r.on_order else '—' }}</td>
+      <td class="num"><input class="sm num" name="reorder_{{ r.item.code }}" value="{{ lv.reorder_point|qty }}" title="Beschikbaar onder dit getal = bestelvoorstel"></td>
+      <td class="num"><input class="sm num" name="pack_{{ r.item.code }}" value="{{ lv.pack_size|qty }}" title="Bestellen per veelvoud van"></td>
+      <td><select class="sm" name="supplier_{{ r.item.code }}"><option value="">—</option>{% for s in active_suppliers %}<option value="{{ s.id }}" {{ 'selected' if s.id == lv.supplier_id else '' }}>{{ s.name }}</option>{% endfor %}</select></td>
+      <td><input class="sm" name="location_{{ r.item.code }}" value="{{ lv.location or '' }}" placeholder="rek A2" style="width:90px"></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <p class="muted small" style="margin:10px 0 0">Beschikbaar = in voorraad − gereserveerd. Bij een aanvaarde offerte reserveren we het materiaal; bij "werk afgerond" wordt het afgeboekt.</p>
+  {% else %}
+  <div class="empty"><strong>Geen voorraadposten</strong><span>Vink op de <a href="/config">configuratiepagina</a> "voorraad bijhouden" aan bij de materialen die je op stock hebt.</span></div>
+  {% endif %}
+</section>
+</form>
+
+<div class="row">
+  <div class="col wide">
+    <section class="card">
+      <div class="card-head"><div class="card-title"><h2>Bestellingen</h2></div></div>
+      {% if placed or done %}
+      <table class="list">
+        <thead><tr><th>Nr</th><th>Leverancier</th><th>Inhoud</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+        {% for o in placed + done %}
+        {% set sup = suppliers.get(o.supplier_id) %}
+        <tr id="bestelling-{{ o.id }}">
+          <td><strong>{{ o.number }}</strong><br><span class="muted small">{{ o.created_at.strftime('%d/%m/%Y') }}</span></td>
+          <td>{{ sup.name if sup else '—' }}</td>
+          <td class="small">{% for ln in order_lines[o.id] %}{{ ln.label }} {{ ln.qty|qty }} {{ ln.unit or '' }}{% if ln.delivery_status == 'niet_leverbaar' %} <span class="tag warn">niet leverbaar</span>{% elif ln.delivery_status %} <span class="muted">· {{ 'nalevering ' if ln.delivery_status == 'nalevering' else '' }}verwacht {{ ln.delivery_date.strftime('%d/%m') }}</span>{% endif %}{% if ln.delivery_note %} <span class="muted">— {{ ln.delivery_note }}</span>{% endif %}{% if not loop.last %}<br>{% endif %}{% endfor %}
+            {% if o.supplier_note %}<br><span class="muted">Leverancier: “{{ o.supplier_note }}”</span>{% endif %}</td>
+          <td><span class="st-pill order-{{ o.status }}">{{ o.status }}</span>{% if o.status == 'besteld' and o.confirmed_at %}<br><span class="muted small">besteld {{ o.confirmed_at.strftime('%d/%m') }}</span>{% elif o.received_at %}<br><span class="muted small">ontvangen {{ o.received_at.strftime('%d/%m') }}</span>{% endif %}
+            {% if o.status == 'besteld' %}<br>{% if o.supplier_updated_at %}<span class="small" style="color:var(--ok)">✓ bevestigd door leverancier {{ o.supplier_updated_at.strftime('%d/%m') }}</span>{% else %}<span class="muted small">wacht op bevestiging leverancier</span>{% endif %}{% if o.public_token %} · <a class="small" href="/l/{{ o.public_token }}" target="_blank" rel="noopener" title="De pagina die de leverancier via de knop in de mail opent">link leverancier</a>{% endif %}{% endif %}</td>
+          <td class="num nowrap">{% if o.status == 'besteld' %}<form method="post" action="/voorraad/bestellingen/{{ o.id }}/ontvangen" style="display:inline"><button class="btn sm primary" type="submit">Ontvangen</button></form> <form method="post" action="/voorraad/bestellingen/{{ o.id }}/annuleer" style="display:inline"><button class="btn sm ghost" type="submit">Annuleer</button></form>{% endif %}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% else %}<p class="muted small">Nog geen bestellingen.</p>{% endif %}
+    </section>
+  </div>
+  <div class="col side">
+    <section class="card">
+      <h2>Gereserveerd per project</h2>
+      {% if reservations %}
+      {% for pid, rs in reservations.items() %}
+      <details class="lines" open>
+        <summary><a href="/projects/{{ pid }}">{{ projects[pid].name if pid in projects else pid }}</a> <span class="muted">· {{ rs|length }} artikel{{ '' if rs|length == 1 else 'en' }}</span></summary>
+        <table class="list compact"><tbody>{% for r in rs %}<tr><td>{{ labels.get(r.code, r.code) }}</td><td class="num">{{ r.qty|qty }} {{ r.unit or '' }}</td></tr>{% endfor %}</tbody></table>
+      </details>
+      {% endfor %}
+      {% else %}<p class="muted small">Geen lopende reservaties. Die ontstaan bij "Offerte aanvaard".</p>{% endif %}
+    </section>
+  </div>
+</div>
+{% endblock %}

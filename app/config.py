@@ -33,9 +33,35 @@ class Settings(BaseSettings):
         default="localhost:*,127.0.0.1:*,localhost,127.0.0.1", alias="OFFERTE_MCP_ALLOWED_HOSTS"
     )
 
+    # Outgoing mail (purchase lists). Without SMTP_HOST mails wait in the outbox (integrations are placeholders in v1).
+    smtp_host: str | None = Field(default=None, alias="OFFERTE_SMTP_HOST")
+    smtp_port: int = Field(default=587, alias="OFFERTE_SMTP_PORT")
+    smtp_user: str | None = Field(default=None, alias="OFFERTE_SMTP_USER")
+    smtp_password: str | None = Field(default=None, alias="OFFERTE_SMTP_PASSWORD")
+    smtp_from: str | None = Field(default=None, alias="OFFERTE_SMTP_FROM")
+    mail_from_name: str = Field(default="Offer AI", alias="OFFERTE_MAIL_FROM_NAME")  # display name in From
+    # Test mode: every mail goes to this address instead of the real recipient (suppliers etc. get nothing)
+    mail_redirect_to: str | None = Field(default=None, alias="OFFERTE_MAIL_REDIRECT_TO")
+    # Triggers for the stock agent / planning tool: POSTed here as JSON when set (HMAC-signed with the secret)
+    webhook_url: str | None = Field(default=None, alias="OFFERTE_WEBHOOK_URL")
+    webhook_secret: str | None = Field(default=None, alias="OFFERTE_WEBHOOK_SECRET")
+    # Peppol: the access point's API that takes a UBL invoice (POST, application/xml, Bearer key). Without it,
+    # approved B2B invoices are 'klaar voor Peppol' and the UBL can be downloaded and uploaded elsewhere.
+    peppol_api_url: str | None = Field(default=None, alias="OFFERTE_PEPPOL_API_URL")
+    peppol_api_key: str | None = Field(default=None, alias="OFFERTE_PEPPOL_API_KEY")
+
     @property
     def mcp_allowed_hosts_list(self) -> list[str]:
         return [h.strip() for h in self.mcp_allowed_hosts.split(",") if h.strip()]
+
+    @property
+    def smtp_ready(self) -> bool:
+        """A host, and a password when a user is set (Gmail/Workspace: an app password)."""
+        return bool(self.smtp_host) and (not self.smtp_user or bool(self.smtp_password))
+
+    @property
+    def peppol_ready(self) -> bool:
+        return bool(self.peppol_api_url)
 
     @property
     def ai_enabled(self) -> bool:

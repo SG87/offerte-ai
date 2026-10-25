@@ -18,6 +18,12 @@ from app.api.routes import router as api_router
 from app.config import get_settings
 from app.db import init_db
 from app.mcp_server import mcp
+from app.web.account import router as account_router
+from app.web.agent import router as agent_router
+from app.web.beheer import router as beheer_router
+from app.web.facturen import router as facturen_router
+from app.web.klant import router as klant_router
+from app.web.leverancier import router as leverancier_router
 from app.web.routes import router as web_router
 
 # the MCP transport is one ASGI route; we add it to the main router so POST /mcp answers directly
@@ -52,6 +58,12 @@ app.add_middleware(SessionMiddleware, secret_key=get_settings().secret_key, same
 app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "web" / "static")), name="static")
 app.include_router(api_router, prefix="/api/v1")
 app.include_router(web_router)
+app.include_router(beheer_router)
+app.include_router(facturen_router)
+app.include_router(account_router)
+app.include_router(agent_router)
+app.include_router(klant_router)
+app.include_router(leverancier_router)
 app.router.routes.extend(mcp_app.routes)
 
 

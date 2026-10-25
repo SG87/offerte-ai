@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="{{ lang }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<title>{{ t('offerte') }} {{ quote.number }} · {{ company.company_name or company.email }}</title>
+<link rel="stylesheet" href="/static/app.css?v={{ asset_v('app.css') }}">
+{% if theme %}<style>:root{ {% for k, v in theme.items() %}{{ k }}:{{ v }};{% endfor %} }</style>{% endif %}
+<style>
+  .klant{max-width:820px;margin:0 auto;padding:24px 16px}
+  .klant-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px}
+  .klant-head img{max-height:52px;max-width:220px}
+  .answer-choice{display:flex;gap:10px;flex-wrap:wrap}
+  .answer-choice .btn{flex:1 1 200px}
+  .result{border-left:4px solid var(--accent);padding:12px 16px;background:var(--accent-bg,#f4f7f5);border-radius:8px}
+  .result.no{border-left-color:#9ca3af;background:#f5f5f5}
+  .total-line{font-size:18px;margin:4px 0 0}
+  .check{display:flex;gap:8px;align-items:flex-start;font-size:14px}
+  .check input{margin-top:3px}
+  .klant table{width:100%}
+  .klant .num{white-space:nowrap}
+  .agenda{position:relative;display:inline-block;margin:0 0 14px}
+  .agenda summary{list-style:none;cursor:pointer}
+  .agenda summary::-webkit-details-marker{display:none}
+  .agenda-menu{position:absolute;z-index:5;top:calc(100% + 4px);left:0;min-width:240px;background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow);padding:6px;display:flex;flex-direction:column}
+  .agenda-menu a{padding:8px 10px;border-radius:6px;color:var(--ink);text-decoration:none;font-size:14px}
+  .agenda-menu a:hover{background:var(--bg)}
+</style>
+</head>
+<body>
+<div class="klant">
+  <div class="klant-head">
+    {% if company.logo_file %}<img src="/o/{{ quote.public_token }}/logo" alt="{{ company.company_name or '' }}">{% else %}<strong style="font-size:20px">{{ company.company_name or company.email }}</strong>{% endif %}
+    <a class="btn" href="/o/{{ quote.public_token }}/offerte.pdf" target="_blank" rel="noopener">{{ t('download_pdf') }}</a>
+  </div>
+
+  {% set headline = (offer_totals(result, incl_vat, lang) | selectattr(2) | list | first) %}
+  {% macro answer_block(with_buttons) %}
+  {% if quote.decision == 'aanvaard' %}
+    <div class="result">{{ t('resultaat_aanvaard', date=quote.decided_at.strftime('%d/%m/%Y'), company=company.company_name or company.email) }}</div>
+  {% elif quote.decision == 'geweigerd' %}
+    <div class="result no">{{ t('resultaat_geweigerd', date=quote.decided_at.strftime('%d/%m/%Y')) }}</div>
+  {% elif blocked == 'vervangen' %}
+    <div class="notice warn">{{ t('vervangen') }}</div>
+  {% elif blocked %}
+    <div class="notice warn">{{ t('afgesloten', company=company.company_name or company.email) }}</div>
+  {% elif with_buttons %}
+    <div class="answer-choice">
+      <a class="btn primary" href="?keuze=aanvaard#antwoord">{{ t('knop_aanvaard') }}</a>
+      <a class="btn" href="?keuze=geweigerd#antwoord">{{ t('knop_weiger') }}</a>
+    </div>
+  {% endif %}
+  {% endmacro %}
+
+  <section class="card">
+    <span class="lbl">{{ t('pagina_titel', company=company.company_name or company.email) }}</span>
+    <h1 style="margin:2px 0 0;font-size:22px">{{ tr(project.name) }}</h1>
+    <p class="muted small" style="margin:4px 0 0">{{ t('offerte') }} {{ t('nr') }} {{ quote.number }} v{{ quote.version }} · {{ t('datum') }} {{ result.created_on.strftime('%d-%m-%Y') }} · {{ t('geldig_tot') }} {{ valid_until.strftime('%d-%m-%Y') }}</p>
+    {% if headline %}<p class="total-line">{{ headline[0] }}: <strong>{{ headline[1]|eur }}</strong></p>{% endif %}
+    {% if quote.decision or blocked %}<div style="margin-top:16px">{{ answer_block(false) }}</div>{% endif %}
+  </section>
+
+  {% if keuze and not quote.decision and not blocked %}
+  <section class="card" id="antwoord">
+    <h2 style="margin-top:0">{{ t('uw_antwoord') }}</h2>
+    {% if fout %}<p class="notice warn small">{{ t(fout) }}</p>{% endif %}
+    {% if keuze == 'aanvaard' %}
+    <form method="post" action="/o/{{ quote.public_token }}" class="stack">
+      <input type="hidden" name="keuze" value="aanvaard">
+      <div class="field"><label class="lbl" for="naam">{{ t('uw_naam') }}</label><input id="naam" name="naam" required autocomplete="name" value="{{ customer.contact_name if customer and customer.contact_name else '' }}"></div>
+      <div class="field"><label class="lbl" for="opmerking">{{ t('opmerking') }}</label><textarea id="opmerking" name="opmerking" rows="3"></textarea></div>
+      <label class="check"><input type="checkbox" name="akkoord" required> <span>{{ t('akkoord_vink') }}</span></label>
+      <div class="actions"><button class="btn primary" type="submit">{{ t('bevestig_aanvaard') }}</button><a class="btn ghost" href="?keuze=geweigerd#antwoord">{{ t('knop_weiger') }}</a></div>
+    </form>
+    {% else %}
+    <form method="post" action="/o/{{ quote.public_token }}" class="stack">
+      <input type="hidden" name="keuze" value="geweigerd">
+      <div class="field"><label class="lbl" for="naam">{{ t('uw_naam') }}</label><input id="naam" name="naam" autocomplete="name"></div>
+      <div class="field"><label class="lbl" for="opmerking">{{ t('reden') }}</label><textarea id="opmerking" name="opmerking" rows="3"></textarea></div>
+      <div class="actions"><button class="btn" type="submit">{{ t('bevestig_weiger') }}</button><a class="btn ghost" href="?keuze=aanvaard#antwoord">{{ t('knop_aanvaard') }}</a></div>
+    </form>
+    {% endif %}
+  </section>
+  {% endif %}
+
+  <section class="card">
+    <div class="row" style="justify-content:space-between">
+      <div><strong>{{ company.company_name or '' }}</strong><br><span class="muted small">{{ company.address or '' }}{% if company.vat_number %} · {{ company.vat_number }}{% endif %}<br>{{ company.email }}{% if company.phone %} · {{ company.phone }}{% endif %}</span></div>
+      <div style="text-align:right" class="small"><span class="lbl">{{ t('klant') }}</span><strong>{{ project.client_name or '' }}</strong><br><span class="muted">{{ project.client_address or '' }}{% if customer and customer.vat_number %}<br>{{ t('btw_nr') }} {{ customer.vat_number }}{% endif %}</span></div>
+    </div>
+    <p style="margin:16px 0 12px">{{ intro }}</p>
+    {% if agenda %}
+    <details class="agenda">
+      <summary class="btn sm"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M3.5 10h17M8 3v4M16 3v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>{{ t('agenda') }}</summary>
+      <div class="agenda-menu">
+        <a href="{{ agenda.google }}" target="_blank" rel="noopener">Google Agenda</a>
+        <a href="{{ agenda.outlook }}" target="_blank" rel="noopener">Outlook.com</a>
+        <a href="/o/{{ quote.public_token }}/agenda.ics">{{ t('agenda_ics') }}</a>
+      </div>
+    </details>
+    {% endif %}
+    {% if result.indicative %}<p class="notice small">{{ t('indicatief') }}</p>{% endif %}
+    <table>
+      <thead><tr><th>{{ t('omschrijving') }}</th><th class="num">{{ t('hoev') }}</th><th class="num">{{ t('eenh') }}</th><th class="num">{{ t('totaal') }} {{ t('incl_btw' if incl_vat else 'excl_btw') }}</th></tr></thead>
+      <tbody>
+      {% for ol in offer_lines(result, incl_vat, lang, tr) %}
+      <tr><td>{{ ol.description }}</td><td class="num">{{ ol.qty|qty if ol.qty is not none else '' }}</td><td class="num">{{ ol.unit }}</td><td class="num">{{ ol.amount|eur }}</td></tr>
+      {% endfor %}
+      </tbody>
+      <tfoot>
+        {% for label, amount, hl in offer_totals(result, incl_vat, lang) %}
+        <tr{% if hl %} style="font-weight:600"{% else %} class="muted"{% endif %}><td colspan="3" class="num">{{ label }}</td><td class="num">{{ amount|eur }}</td></tr>
+        {% endfor %}
+      </tfoot>
+    </table>
+    {% if result.assumptions %}<p class="muted small" style="margin-top:12px">{{ t('aannames') }}: {% for a in result.assumptions %}{{ tr(a.text) }}{% if not loop.last %} · {% endif %}{% endfor %}</p>{% endif %}
+    <p class="muted small">{{ t('voorwaarden') }}: {{ t('voorwaarden_standaard') }}</p>
+  </section>
+
+  {% if not keuze and not quote.decision and not blocked %}<section class="card">{{ answer_block(true) }}</section>{% endif %}
+
+  <p class="muted small" style="text-align:center">{{ t('contact', company=company.company_name or company.email) }}: <a href="mailto:{{ company.email }}">{{ company.email }}</a>{% if company.phone %} · {{ company.phone }}{% endif %}<br>{{ t('mail_footer', company=company.company_name or company.email) }}</p>
+</div>
+</body>
+</html>

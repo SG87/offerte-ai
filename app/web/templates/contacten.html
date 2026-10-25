@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}{{ kind.label }} · Offerte-AI{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Contacten</h1>
+    <p class="lead" style="margin:0">{{ kind.note }}</p>
+  </div>
+</div>
+
+<nav class="tabs">
+  {% for key, k in kinds.items() %}
+  <a href="/contacten/{{ key }}" class="{{ 'on' if key == kind_key else '' }}">{{ k.label }}</a>
+  {% endfor %}
+  <a class="right small" href="/contacten/{{ kind_key }}?inactief={{ 0 if show_inactive else 1 }}">{{ 'verberg gearchiveerde' if show_inactive else 'toon gearchiveerde' }}</a>
+</nav>
+
+<div class="row">
+  <div class="col wide">
+    <section class="card">
+      {% if rows %}
+      <table class="list">
+        <thead><tr>
+          {% for c in kind.columns %}<th>{{ {'name':'Naam','kind':'Type','language':'Taal','contact_name':'Contact','email':'E-mail','phone':'Telefoon','address':'Adres','lead_days':'Levertermijn','role':'Rol','channels':'Communicatie','flags':'Verantwoordelijk voor'}[c] }}</th>{% endfor %}
+          <th></th>
+        </tr></thead>
+        <tbody>
+        {% for r in rows %}
+        <tr class="{{ 'inactive' if not r.active else '' }}">
+          {% for c in kind.columns %}
+          <td>
+            {% if c == 'name' %}
+              {% if kind_key == 'werknemers' %}<span class="swatch" style="background:{{ color_of(r) }}"></span><a href="/contacten/werknemers/{{ r.id }}"><strong>{{ r.name }}</strong></a>{% else %}<strong>{{ r.name }}</strong>{% endif %}
+              {% if not r.active %}<span class="tag">gearchiveerd</span>{% endif %}
+            {% elif c == 'kind' %}<span class="tag {{ 'accent' if r.kind == 'b2b' else '' }}" title="{{ 'offerte excl. btw' if r.kind == 'b2b' else 'offerte incl. btw' }}">{{ r.kind|upper }}</span>
+            {% elif c == 'language' %}<span class="tag">{{ (r.language or 'nl')|upper }}</span>
+            {% elif c == 'lead_days' %}{{ r.lead_days }} d
+            {% elif c == 'channels' %}{% for ch in r.channels %}<span class="tag">{{ channels.get(ch, ch) }}</span> {% endfor %}
+            {% elif c == 'flags' %}{% if r.stock_manager %}<span class="tag accent">voorraad</span>{% endif %} {% if r.planner %}<span class="tag accent">planning</span>{% endif %} {% if r.invoicer %}<span class="tag accent">facturen</span>{% endif %}
+            {% elif c == 'email' and r.email %}<a href="mailto:{{ r.email }}">{{ r.email }}</a>
+            {% else %}{{ r[c] or '—' }}{% endif %}
+          </td>
+          {% endfor %}
+          <td class="num nowrap">
+            <a class="btn sm" href="/contacten/{{ kind_key }}?edit={{ r.id }}{{ '&inactief=1' if show_inactive else '' }}">Bewerk</a>
+            <form method="post" action="/contacten/{{ kind_key }}/{{ r.id }}/actief" style="display:inline"><button class="btn sm ghost" type="submit">{{ 'Activeer' if not r.active else 'Archiveer' }}</button></form>
+          </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="empty"><strong>Nog geen {{ kind.label|lower }}</strong><span>Voeg er rechts een toe.</span></div>
+      {% endif %}
+    </section>
+  </div>
+  <div class="col side">
+    <section class="card">
+      <h2>{{ (kind.singular + ' bewerken') if editing else ('Nieuwe ' + kind.singular|lower) }}</h2>
+      <form method="post" action="/contacten/{{ kind_key }}">
+        {% if editing %}<input type="hidden" name="id" value="{{ editing.id }}">{% endif %}
+        {% for f in kind.fields %}
+        {% set name, label, ftype = f[0], f[1], f[2] %}
+        {% set val = editing[name] if editing else defaults.get(name, '') %}
+        <div class="field">
+          {% if ftype == 'checkboxes' %}
+          <fieldset class="checks"><legend class="lbl">{{ label }}</legend>
+            {% for o in f[4] %}<label class="check-opt{{ ' off' if o|length > 2 and o[2] else '' }}"><input type="checkbox" name="{{ name }}" value="{{ o[0] }}" {{ 'checked' if val and o[0] in val else '' }} {{ 'disabled' if o|length > 2 and o[2] else '' }}> {{ o[1] }}</label>{% endfor %}
+          </fieldset>
+          {% elif ftype == 'checkbox' %}
+          <label class="switch {{ 'on' if val else '' }}"><input type="checkbox" name="{{ name }}" {{ 'checked' if val else '' }}> {{ label }}</label>
+          {% else %}
+          <label class="lbl" for="f_{{ name }}">{{ label }}</label>
+          {% if ftype == 'textarea' %}<textarea id="f_{{ name }}" name="{{ name }}" rows="3">{{ val or '' }}</textarea>
+          {% elif ftype == 'select' %}<select id="f_{{ name }}" name="{{ name }}">{% for o in f[4] %}{% set o = (o, o) if o is string else o %}<option value="{{ o[0] }}" {{ 'selected' if o[0] == val else '' }} {{ 'disabled' if o|length > 2 and o[2] else '' }}>{{ o[1] }}</option>{% endfor %}</select>
+          {% elif ftype == 'color' %}<input id="f_{{ name }}" name="{{ name }}" type="color" value="{{ val or (color_of(editing) if editing else '#1f5fbf') }}">
+          {% else %}<input id="f_{{ name }}" name="{{ name }}" type="{{ ftype }}" value="{{ val if val is not none else '' }}" {{ 'required' if f|length > 3 and f[3] else '' }} {{ 'step="0.5" min="0"' if ftype == 'number' else '' }}>{% endif %}
+          {% endif %}
+        </div>
+        {% endfor %}
+        <div class="actions">
+          <button class="btn primary" type="submit">{{ 'Bewaar' if editing else 'Toevoegen' }}</button>
+          {% if editing %}<a class="btn" href="/contacten/{{ kind_key }}">Annuleer</a>{% endif %}
+        </div>
+      </form>
+    </section>
+  </div>
+</div>
+{% endblock %}

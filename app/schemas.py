@@ -80,6 +80,7 @@ class PriceItem(BaseModel):
     coverage: float | None = None  # units covered per material_unit per layer (e.g. 8 m2 per litre)
     hours_per_unit: float = 0.0
     hours_scale_with_layers: bool = False
+    stock: bool | None = None  # material you buy and keep in stock; None = the sector skill decides
 
 
 class PriceConfig(BaseModel):
@@ -189,3 +190,9 @@ class CompanyLookup(BaseModel):
     language: str = "nl"
     method: Literal["ai", "heuristic", "none"] = "none"
     evidence: str | None = None
+    # house style
+    logo_url: str | None = None  # remote image URL, or None when the logo is inline SVG
+    logo_source: str | None = None  # header-svg | header-img | img-logo | og-image | touch-icon | favicon | ai
+    logo_svg: str | None = Field(default=None, exclude=True)  # inline markup, stored server-side only
+    brand_primary: str | None = None  # "#rrggbb"
+    brand_secondary: str | None = None

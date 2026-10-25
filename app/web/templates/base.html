@@ -4,22 +4,43 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}Offerte-AI{% endblock %}</title>
-<link rel="stylesheet" href="/static/app.css">
+<link rel="stylesheet" href="/static/app.css?v={{ asset_v('app.css') }}">
+{% if theme %}<style>:root{ {% for k, v in theme.items() %}{{ k }}:{{ v }};{% endfor %} }</style>{% endif %}
 </head>
-<body>
+<body data-watch="{% block watch %}{% endblock %}">
 <header class="top">
-  <a class="brand" href="/"><i></i>Offerte-AI</a>
+  <a class="brand" href="/">
+    {% if org and org.logo_file %}<img class="logo" src="/branding/logo?v={{ org.logo_file }}" alt="{{ org.company_name or 'logo' }}"><span class="sep"></span><span class="product">Offerte-AI</span>
+    {% else %}<i></i>Offerte-AI{% endif %}
+  </a>
   {% if org and org.onboarding_done %}
   <nav>
     <a href="/projects" class="{{ 'on' if request.url.path.startswith('/projects') else '' }}">Projecten</a>
+    <a href="/planning" class="{{ 'on' if request.url.path.startswith('/planning') else '' }}">Planning</a>
+    <a href="/facturen" class="{{ 'on' if request.url.path.startswith('/facturen') else '' }}">Facturen</a>
+    <a href="/todo" class="{{ 'on' if request.url.path.startswith('/todo') else '' }}">To-do{% if todo_open %} <span class="badge">{{ todo_open }}</span>{% endif %}</a>
+    <a href="/voorraad" class="{{ 'on' if request.url.path.startswith('/voorraad') else '' }}">Voorraad</a>
+    <a href="/contacten" class="{{ 'on' if request.url.path.startswith('/contacten') else '' }}">Contacten</a>
     <a href="/config" class="{{ 'on' if request.url.path.startswith('/config') else '' }}">Configuratie</a>
-    <a href="/docs">API</a>
   </nav>
   {% endif %}
   <div class="right">
     {% if org %}
-      <span class="tag">{{ org.sector }} · {{ org.country }} · {{ org.language }}</span>
-      <span>{{ org.company_name or org.email }}</span>
+      <div class="ai-ind" id="ai-ind" hidden>
+        <button type="button" class="ai-pill" id="ai-pill" aria-expanded="false" aria-controls="ai-menu">
+          <span class="ai-spark" aria-hidden="true">✦</span><span class="spinner"></span><span id="ai-pill-text">AI bezig</span>
+        </button>
+        <div class="ai-menu card" id="ai-menu" hidden>
+          <strong>AI aan het werk</strong>
+          <ul id="ai-list"></ul>
+          <p class="muted small" style="margin:6px 0 0">Je kan gewoon verder werken; je krijgt een melding als het klaar is.</p>
+        </div>
+      </div>
+      {% if org.onboarding_done %}<button type="button" class="agent-toggle" id="agent-toggle" aria-controls="agent-pane" aria-expanded="false"><span class="ai-spark" aria-hidden="true">✦</span> Vraag het AI</button>{% endif %}
+      <a class="account-link {{ 'on' if request.url.path.startswith('/account') else '' }}" href="/account" title="Account en instellingen">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+        <span>{{ org.company_name or org.email }}</span>
+      </a>
       <a href="/logout">afmelden</a>
     {% endif %}
     {% if not ai_enabled %}<span class="tag warn" title="Zet ANTHROPIC_API_KEY in .env">AI uit</span>{% endif %}
@@ -29,6 +50,220 @@
   {% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
   {% block content %}{% endblock %}
 </main>
+{% if org and org.onboarding_done %}
+<aside class="agent-pane" id="agent-pane" hidden aria-label="AI-assistent">
+  <div class="agent-head">
+    <div><strong><span class="ai-spark" aria-hidden="true">✦</span> AI-assistent</strong><span class="muted small">Vraag alles over je projecten, planning, voorraad en facturen.</span></div>
+    <button type="button" class="btn sm ghost" id="agent-new" title="Nieuw gesprek">Nieuw</button>
+    <button type="button" class="agent-x" id="agent-close" aria-label="Sluit de AI-assistent">×</button>
+  </div>
+  <div class="agent-log" id="agent-log" aria-live="polite"></div>
+  <form class="agent-form" id="agent-form">
+    <textarea id="agent-input" rows="2" placeholder="{{ 'bv. Welke facturen zijn te laat?' if ai_enabled else 'AI staat uit (geen ANTHROPIC_API_KEY)' }}" {{ '' if ai_enabled else 'disabled' }} aria-label="Je vraag"></textarea>
+    <button class="btn primary" type="submit" id="agent-send" {{ '' if ai_enabled else 'disabled' }}>Vraag</button>
+  </form>
+  <p class="muted small agent-foot">Wijzigingen stelt de assistent voor; ze gebeuren pas als je op <strong>Uitvoeren</strong> klikt.</p>
+</aside>
+<script>
+(() => {
+  const pane = document.getElementById("agent-pane"), toggle = document.getElementById("agent-toggle");
+  const log = document.getElementById("agent-log"), form = document.getElementById("agent-form");
+  const input = document.getElementById("agent-input"), send = document.getElementById("agent-send");
+  const store = {get: (k) => { try { return localStorage.getItem(k); } catch { return null; } },
+                 set: (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} }};
+  let conv = store.get("agent_conv"), busy = false;
+  const esc = (t) => String(t ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  // tiny markdown: **bold**, [text](/internal/path), "- " bullets, line breaks — on escaped text only
+  const md = (t) => esc(t)
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/\[([^\]]+)\]\((\/(?!\/)[^)\s]*)\)/g, '<a href="$2">$1</a>')  // internal paths only, not //host
+    .replace(/^- (.*)$/gm, "• $1")
+    .replace(/\n/g, "<br>");
+  const SUGGEST = ["Welke facturen zijn te laat?", "Wat staat er volgende week gepland?", "Welke offertes wachten op een antwoord?", "Is er voorraad die ik moet bijbestellen?"];
+
+  function bubble(role, html) {
+    const el = document.createElement("div");
+    el.className = "agent-msg " + role;
+    el.innerHTML = html;
+    log.appendChild(el);
+    log.scrollTop = log.scrollHeight;
+    return el;
+  }
+  function actionCard(a) {
+    const el = document.createElement("div");
+    el.className = "agent-action st-" + a.status;
+    const done = a.status !== "voorgesteld";
+    el.innerHTML = `<span class="lbl">Voorstel</span><div>${esc(a.summary)}</div>`
+      + (done ? `<div class="small"><strong>${esc(a.status)}</strong>${a.result ? " — " + esc(a.result) : ""}${a.status === "uitgevoerd" ? ' · <a href="">vernieuw pagina</a>' : ""}</div>`
+              : `<div class="actions"><button type="button" class="btn sm primary">Uitvoeren</button><button type="button" class="btn sm ghost">Annuleren</button></div>`);
+    if (!done) {
+      const [run, cancel] = el.querySelectorAll("button");
+      const go = async (what) => {
+        run.disabled = cancel.disabled = true;
+        const r = await fetch(`/agent/acties/${a.id}/${what}`, {method: "POST"});
+        const out = await r.json();
+        el.replaceWith(actionCard(r.ok ? out : {...a, status: "mislukt", result: out.error}));
+      };
+      run.onclick = () => go("uitvoeren");
+      cancel.onclick = () => go("annuleren");
+    }
+    log.appendChild(el);
+    log.scrollTop = log.scrollHeight;
+    return el;
+  }
+  function empty() {
+    log.innerHTML = "";
+    const el = bubble("assistant", "Hoi! Ik zoek het voor je op in je eigen gegevens. Bijvoorbeeld:");
+    const chips = document.createElement("div");
+    chips.className = "agent-chips";
+    SUGGEST.forEach((q) => {
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "chip-btn"; b.textContent = q;
+      b.onclick = () => { input.value = q; form.requestSubmit(); };
+      chips.appendChild(b);
+    });
+    el.appendChild(chips);
+  }
+  async function load() {
+    if (!conv) return empty();
+    const r = await fetch(`/agent/gesprek/${conv}`);
+    if (!r.ok) { conv = null; store.set("agent_conv", null); return empty(); }
+    const data = await r.json();
+    log.innerHTML = "";
+    data.messages.forEach((m) => bubble(m.role, m.role === "user" ? esc(m.text).replace(/\n/g, "<br>") : md(m.text)));
+    data.actions.forEach(actionCard);
+    if (!data.messages.length) empty();
+  }
+  function setOpen(open) {
+    pane.hidden = !open;
+    document.body.classList.toggle("agent-open", open);
+    toggle.setAttribute("aria-expanded", String(open));
+    store.set("agent_open", open ? "1" : null);
+    if (open) { if (!log.childElementCount) load(); input.focus(); }
+  }
+  toggle.onclick = () => setOpen(pane.hidden);
+  document.getElementById("agent-close").onclick = () => setOpen(false);
+  document.getElementById("agent-new").onclick = () => { conv = null; store.set("agent_conv", null); empty(); input.focus(); };
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); form.requestSubmit(); } });
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const q = input.value.trim();
+    if (!q || busy) return;
+    busy = true; send.disabled = true; input.value = "";
+    if (log.querySelector(".agent-chips")) log.innerHTML = "";
+    bubble("user", esc(q).replace(/\n/g, "<br>"));
+    const wait = bubble("assistant pending", '<span class="spinner"></span> even opzoeken…');
+    try {
+      const r = await fetch("/agent/vraag", {method: "POST", headers: {"Content-Type": "application/json"},
+                                             body: JSON.stringify({message: q, conversation_id: conv ? Number(conv) : null})});
+      const data = await r.json();
+      wait.remove();
+      if (data.conversation_id) { conv = String(data.conversation_id); store.set("agent_conv", conv); }
+      if (!r.ok) { bubble("assistant error", esc(data.error || "Er ging iets mis.")); return; }
+      if (data.reply) bubble("assistant", md(data.reply));
+      (data.actions || []).forEach(actionCard);
+    } catch (err) {
+      wait.remove();
+      bubble("assistant error", "Geen verbinding met de server.");
+    } finally {
+      busy = false; send.disabled = false; input.focus();
+    }
+  });
+  if (store.get("agent_open")) setOpen(true);
+})();
+</script>
+{% endif %}
+{% if org %}
+<div class="ai-modal" id="ai-modal" role="dialog" aria-modal="false" aria-labelledby="ai-modal-title" hidden>
+  <div class="ai-modal-card card">
+    <div class="ai-modal-ico" aria-hidden="true"><span class="ring"></span><span class="ai-spark">✦</span></div>
+    <h2 id="ai-modal-title">AI-analyse gestart</h2>
+    <p id="ai-modal-what" class="lead" style="margin:0 0 8px"></p>
+    <p class="small muted" style="margin:0 0 16px">Dit loopt in de achtergrond. Je kan ondertussen gewoon naar andere pagina's gaan. Rechtsboven zie je <span class="ai-pill static"><span class="ai-spark">✦</span> AI bezig</span> zolang het loopt, en je krijgt een melding zodra het klaar is.</p>
+    <div class="actions">
+      <button class="btn primary" type="button" id="ai-modal-ok">Begrepen</button>
+      <label class="small muted" style="display:inline-flex;gap:6px;align-items:center"><input type="checkbox" id="ai-modal-skip"> niet meer tonen</label>
+    </div>
+  </div>
+</div>
+<div class="toasts" id="toasts" aria-live="polite"></div>
+<script>
+(() => {
+  const state = {{ (ai_state or {"running": [], "finished": []})|tojson }};
+  const popup = {{ ai_popup|tojson }};
+  const watch = (document.body.dataset.watch || "").split(/\s+/).filter(Boolean);
+  const ind = document.getElementById("ai-ind"), pill = document.getElementById("ai-pill");
+  const menu = document.getElementById("ai-menu"), list = document.getElementById("ai-list");
+  const fmt = (s) => Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+  const esc = (t) => String(t ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  const watched = (j) => watch.includes("project:" + j.project_id) || watch.includes("kind:" + j.kind);
+  let running = state.running, tick = 0;
+
+  function render() {
+    ind.hidden = running.length === 0;
+    document.body.classList.toggle("ai-running", running.length > 0);
+    document.getElementById("ai-pill-text").textContent = running.length > 1 ? `AI bezig (${running.length})` : "AI bezig";
+    list.innerHTML = running.map((j) =>
+      `<li><span class="spinner"></span><span><a href="${esc(j.link || "#")}">${esc(j.title)}</a><small class="muted"> · ${fmt(j.elapsed_s + tick)}</small></span></li>`).join("");
+  }
+  pill.addEventListener("click", () => { menu.hidden = !menu.hidden; pill.setAttribute("aria-expanded", String(!menu.hidden)); });
+  document.addEventListener("click", (e) => { if (!ind.contains(e.target)) { menu.hidden = true; pill.setAttribute("aria-expanded", "false"); } });
+
+  function toast(j) {
+    const ok = j.status === "klaar";
+    const el = document.createElement("div");
+    el.className = "toast " + (ok ? "ok" : "fail");
+    el.innerHTML = `<span class="toast-ico">${ok ? "✓" : "!"}</span><div><strong>${esc(j.title)}</strong><span>${esc(j.message || (ok ? "Klaar." : "Mislukt."))}</span>`
+      + (j.link && location.pathname !== j.link.split("#")[0] ? `<a href="${esc(j.link)}">Bekijk →</a>` : "") + `</div><button type="button" aria-label="Sluiten">×</button>`;
+    el.querySelector("button").onclick = () => el.remove();
+    document.getElementById("toasts").appendChild(el);
+    setTimeout(() => el.classList.add("show"), 10);
+    // stays 20 s (failures 45 s), and never disappears while the pointer is on it
+    let left = ok ? 20000 : 45000, timer;
+    const hide = () => { el.classList.remove("show"); setTimeout(() => el.remove(), 300); };
+    const arm = () => { timer = setTimeout(hide, left); };
+    el.addEventListener("mouseenter", () => clearTimeout(timer));
+    el.addEventListener("mouseleave", () => { left = 4000; arm(); });
+    arm();
+  }
+  function seen() { fetch("/ai/jobs/seen", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }); }
+
+  if (state.finished.length) { state.finished.forEach(toast); seen(); }
+
+  let skipPopup = false;
+  try { skipPopup = localStorage.getItem("ai-popup-skip") === "1"; } catch (_) {}
+  if (popup && !skipPopup) {
+    const m = document.getElementById("ai-modal");
+    document.getElementById("ai-modal-what").textContent = popup + ".";
+    m.hidden = false;
+    const close = () => {
+      m.hidden = true;
+      try { if (document.getElementById("ai-modal-skip").checked) localStorage.setItem("ai-popup-skip", "1"); } catch (_) {}
+    };
+    document.getElementById("ai-modal-ok").onclick = close;
+    m.addEventListener("click", (e) => { if (e.target === m) close(); });
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
+    document.getElementById("ai-modal-ok").focus();
+  }
+
+  render();
+  setInterval(() => { if (running.length) { tick++; if (!menu.hidden) render(); } }, 1000);
+  async function poll() {
+    if (!running.length) return;
+    try {
+      const r = await fetch("/ai/jobs", { cache: "no-store" });
+      if (!r.ok) return;
+      const now = await r.json();
+      const done = now.finished.filter((j) => running.some((x) => x.id === j.id));
+      if (done.some(watched)) { location.reload(); return; }  // the page shows the result; the toast follows after reload
+      if (done.length) { done.forEach(toast); seen(); }
+      running = now.running; tick = 0; render();
+    } catch (_) { /* keep polling */ }
+  }
+  setInterval(poll, 3000);
+})();
+</script>
+{% endif %}
 <footer class="foot">Offerte-AI rekent op basis van de door jou aangeleverde plannen, maten en prijzen. Jij controleert de meetstaat en de offerte vóór verzending; het platform draagt geen aansprakelijkheid voor meet- of rekenfouten in verzonden offertes.</footer>
 </body>
 </html>

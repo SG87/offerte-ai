@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}{{ emp.name }} · Offerte-AI{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <a class="crumb" href="/contacten/werknemers">← Werknemers</a>
+    <h1><span class="swatch lg" style="background:{{ color }}"></span>{{ emp.name }}</h1>
+    <div class="meta">
+      <span class="chip">{{ emp.role }}</span>
+      {% if emp.stock_manager %}<span class="chip">verantwoordelijke voorraad</span>{% endif %}
+      {% if emp.planner %}<span class="chip">planner</span>{% endif %}
+      {% if emp.email %}<a href="mailto:{{ emp.email }}">{{ emp.email }}</a>{% endif %}
+      {% if emp.phone %}<span>{{ emp.phone }}</span>{% endif %}
+      <span class="chip" title="Gewenste communicatiemiddelen">via {% for ch in emp.channels %}{{ channels.get(ch, ch)|lower }}{% if not loop.last %}, {% endif %}{% endfor %}</span>
+      {% if not emp.active %}<span class="tag">gearchiveerd</span>{% endif %}
+    </div>
+  </div>
+  <a class="btn" href="/contacten/werknemers?edit={{ emp.id }}">Gegevens bewerken</a>
+</div>
+
+<div class="row">
+  <div class="col wide">
+    <section class="card">
+      <div class="card-head">
+        <div class="card-title"><h2>Beschikbaarheid</h2><span class="muted small">{{ hours_month|qty }} u ingepland deze maand</span></div>
+        <div class="cal-nav">
+          <a class="btn sm" href="?maand={{ prev_month }}">‹</a>
+          <strong>{{ month_label }}</strong>
+          <a class="btn sm" href="?maand={{ next_month }}">›</a>
+          <a class="btn sm ghost" href="?">vandaag</a>
+        </div>
+      </div>
+      <div class="cal">
+        {% for n in ['ma','di','wo','do','vr','za','zo'] %}<div class="cal-h">{{ n }}</div>{% endfor %}
+        {% for week in weeks %}{% for d in week %}
+        {% set abs = absent_days.get(d, []) %}
+        {% set work = work_days.get(d, []) %}
+        <div class="cal-d {{ '' if in_month(d) else 'out' }} {{ 'today' if d == today else '' }} {{ 'absent' if abs else '' }} {{ 'wknd' if d.weekday() > 4 else '' }}">
+          <span class="n">{{ d.day }}</span>
+          {% for a in abs %}<span class="ev abs">{{ a.reason }}</span>{% endfor %}
+          {% for it in work %}<a class="ev work" href="/planning?dag={{ d }}&item={{ it.id }}" style="--c:{{ color }}">{{ projects[it.project_id].name if it.project_id in projects else (it.title or 'werk') }}</a>{% endfor %}
+        </div>
+        {% endfor %}{% endfor %}
+      </div>
+      <p class="legend"><span><i style="background:#fde2e2;border-color:#b42318"></i>afwezig</span><span><i style="background:{{ color }};border-color:{{ color }}"></i>ingepland werk</span></p>
+    </section>
+  </div>
+  <div class="col side">
+    <section class="card">
+      <h2>Afwezigheid toevoegen</h2>
+      <form method="post" action="/contacten/werknemers/{{ emp.id }}/afwezigheid">
+        <div class="grid" style="grid-template-columns:1fr 1fr">
+          <div><label class="lbl" for="date_from">Van</label><input id="date_from" name="date_from" type="date" required value="{{ today }}"></div>
+          <div><label class="lbl" for="date_to">Tot en met</label><input id="date_to" name="date_to" type="date"></div>
+        </div>
+        <div class="field" style="margin-top:12px"><label class="lbl" for="reason">Reden</label>
+          <select id="reason" name="reason">{% for r in ['verlof','ziek','opleiding','feestdag','andere'] %}<option>{{ r }}</option>{% endfor %}</select></div>
+        <div class="field"><label class="lbl" for="note">Notitie</label><input id="note" name="note" placeholder="optioneel"></div>
+        <button class="btn primary" type="submit">Bewaar afwezigheid</button>
+      </form>
+    </section>
+    <section class="card">
+      <h2>Afwezigheden</h2>
+      {% if all_absences %}
+      <table class="list"><tbody>
+        {% for a in all_absences %}
+        <tr><td>{{ a.date_from.strftime('%d/%m/%Y') }}{% if a.date_to != a.date_from %} – {{ a.date_to.strftime('%d/%m/%Y') }}{% endif %}</td><td>{{ a.reason }}{% if a.note %} <span class="muted">· {{ a.note }}</span>{% endif %}</td>
+          <td class="num"><form method="post" action="/contacten/werknemers/{{ emp.id }}/afwezigheid/{{ a.id }}/verwijder"><button class="btn sm ghost" type="submit">×</button></form></td></tr>
+        {% endfor %}
+      </tbody></table>
+      {% else %}<p class="muted small">Nog geen afwezigheden.</p>{% endif %}
+    </section>
+  </div>
+</div>
+{% endblock %}

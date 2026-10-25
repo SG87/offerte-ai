@@ -41,7 +41,7 @@ def translate_override(free_text: str, skill: Skill) -> tuple[list[Adjustment], 
             + ADJUSTMENT_DOC
             + '\nAntwoord met JSON: {"adjustments":[...], "unsupported":["..."]}'
         )
-        raw = ask_json(system, [text_block(free_text)], max_tokens=2000)
+        raw = ask_json(system, [text_block(free_text)], max_tokens=8000)
         adjustments = [Adjustment.model_validate(a) for a in raw.get("adjustments", [])]
         return adjustments, list(raw.get("unsupported", [])), "ai"
     except AIUnavailable:
@@ -104,7 +104,7 @@ def assist_edit(instruction: str, geometry: Geometry, skill: Skill) -> tuple[Geo
         text_block("Huidige Geometry:\n" + geometry.model_dump_json()),
         text_block("Instructie: " + instruction.strip()),
     ]
-    raw = ask_json(system, content, max_tokens=8000)
+    raw = ask_json(system, content)
     new_geometry = Geometry.model_validate(raw["geometry"])
     adjustments = [Adjustment.model_validate(a) for a in raw.get("adjustments", [])]
     return new_geometry, adjustments, str(raw.get("summary", "Aangepast."))

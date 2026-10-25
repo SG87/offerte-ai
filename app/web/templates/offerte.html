@@ -1,37 +1,43 @@
 {% extends "base.html" %}
 {% block title %}Offerte {{ quote.number }} · Offerte-AI{% endblock %}
+{% block watch %}project:{{ project.id }}{% endblock %}
 {% block content %}
 <div class="actions" style="margin-bottom:12px">
   <a href="/projects/{{ project.id }}">← Werkruimte</a>
   <strong style="font-size:17px">Offerte {{ quote.number }} v{{ quote.version }} · {{ project.client_name or '[KLANT]' }}</strong>
   <span class="tag">{{ quote.status }}</span>
+  <span class="tag">{{ 'B2C · incl. btw' if incl_vat else 'B2B · excl. btw' }}</span>
+  <span class="tag" title="Taal van de klant">{{ lang|upper }} · {{ language_name }}</span>
   <span class="tag {{ 'warn' if result.indicative else 'accent' }}">{{ 'indicatief' if result.indicative else 'definitief' }}</span>
   <span class="tag">prijslijst v{{ quote.config_version }} · skill v{{ quote.skill_version }}{% if result.override_version %} · aanvullingen v{{ result.override_version }}{% endif %}</span>
 </div>
 <div class="row">
   <div class="col wide">
-    <div class="card" style="max-width:760px">
+    {% if translating %}<div class="notice small" style="max-width:760px">Claude vertaalt postnamen, ruimtes en aannames naar het {{ language_name|lower }}. Deze pagina werkt zichzelf bij; tot dan staan die teksten nog in het Nederlands.</div>
+    {% elif untranslated and lang != 'nl' %}<div class="notice warn small" style="max-width:760px">{{ untranslated }} tekst{{ '' if untranslated == 1 else 'en' }} (postnamen, ruimtes of aannames) nog niet vertaald naar het {{ language_name|lower }}{{ '' if ai_enabled else ': AI staat uit (geen ANTHROPIC_API_KEY)' }}. Vaste teksten zijn wel vertaald.</div>{% endif %}
+    <div class="card" style="max-width:760px" lang="{{ lang }}">
       <div class="row" style="justify-content:space-between">
         <div><strong>{{ org.company_name or '[JOUW BEDRIJF]' }}</strong><br><span class="muted" style="font-size:13px">{{ org.address or '[adres]' }} · {{ org.vat_number or '[btw-nr]' }} · {{ org.email }}</span></div>
-        <div style="text-align:right;font-size:13px"><strong style="font-size:18px">Offerte</strong><br>Nr. {{ quote.number }}<br>Datum {{ result.created_on }}</div>
+        <div style="text-align:right;font-size:13px"><strong style="font-size:18px">{{ t('offerte') }}</strong><br>{{ t('nr') }} {{ quote.number }}<br>{{ t('datum') }} {{ result.created_on.strftime('%d-%m-%Y') if result.created_on else '' }}</div>
       </div>
-      <p style="margin:16px 0 4px"><span class="lbl">Klant</span><strong>{{ project.client_name or '[KLANT]' }}</strong><br><span class="muted">{{ project.client_address or '' }}</span></p>
-      <h2 style="margin-top:12px">{{ project.name }}</h2>
+      <p style="margin:16px 0 4px"><span class="lbl">{{ t('klant') }}</span><strong>{{ project.client_name or '[KLANT]' }}</strong><br><span class="muted">{{ project.client_address or '' }}{% if customer and customer.vat_number %}<br>{{ t('btw_nr') }} {{ customer.vat_number }}{% endif %}</span></p>
+      <h2 style="margin-top:12px">{{ tr(project.name) }}</h2>
+      <p style="margin:0 0 12px">{{ intro }}{% if proposal_sentence %} <a class="small" href="/projects/{{ project.id }}#voorstel" lang="nl">voorstel aanpassen</a>{% endif %}</p>
       <table>
-        <thead><tr><th>Omschrijving</th><th class="num">Hoev.</th><th class="num">Eenh.</th><th class="num">Totaal</th></tr></thead>
+        <thead><tr><th>{{ t('omschrijving') }}</th><th class="num">{{ t('hoev') }}</th><th class="num">{{ t('eenh') }}</th><th class="num">{{ t('totaal') }} {{ t('incl_btw' if incl_vat else 'excl_btw') }}</th></tr></thead>
         <tbody>
-        {% for line in result.lines %}
-        <tr><td>{{ line.zone_name }}: {{ line.post_label }}{% if line.layers > 1 %} ({{ line.layers }} lagen){% endif %}</td><td class="num">{{ line.net_qty|qty }}</td><td class="num">{{ line.unit }}</td><td class="num">{{ line.line_total|eur }}</td></tr>
+        {% for ol in offer_lines(result, incl_vat, lang, tr) %}
+        <tr><td>{{ ol.description }}</td><td class="num">{{ ol.qty|qty if ol.qty is not none else '' }}</td><td class="num">{{ ol.unit }}</td><td class="num">{{ ol.amount|eur }}</td></tr>
         {% endfor %}
         </tbody>
         <tfoot>
-          <tr><td colspan="3" class="num">Subtotaal excl. btw</td><td class="num">{{ result.totals.subtotal_excl|eur }}</td></tr>
-          <tr><td colspan="3" class="num">Btw {{ result.totals.vat_pct|qty }} %</td><td class="num">{{ result.totals.vat|eur }}</td></tr>
-          <tr style="font-weight:600"><td colspan="3" class="num">Totaal incl. btw</td><td class="num">{{ result.totals.total_incl|eur }}</td></tr>
+          {% for label, amount, headline in offer_totals(result, incl_vat, lang) %}
+          <tr{% if headline %} style="font-weight:600"{% else %} class="muted"{% endif %}><td colspan="3" class="num">{{ label }}</td><td class="num">{{ amount|eur }}</td></tr>
+          {% endfor %}
         </tfoot>
       </table>
-      {% if result.assumptions %}<p class="muted" style="font-size:13px;margin-top:12px">Aannames: {% for a in result.assumptions %}{{ a.text }}{% if not loop.last %} · {% endif %}{% endfor %}</p>{% endif %}
-      <p class="muted" style="font-size:13px">Bijlage A: meetstaat · Bijlage B: geannoteerd plan</p>
+      {% if result.assumptions %}<p class="muted" style="font-size:13px;margin-top:12px">{{ t('aannames') }}: {% for a in result.assumptions %}{{ tr(a.text) }}{% if not loop.last %} · {% endif %}{% endfor %}</p>{% endif %}
+      <p class="muted" style="font-size:13px">{{ t('bijlagen') }}</p>
     </div>
   </div>
   <div class="col">
@@ -41,9 +47,56 @@
         <a class="btn primary" href="/projects/{{ project.id }}/offerte.pdf" target="_blank">Download PDF</a>
         <a class="btn" href="/projects/{{ project.id }}/meetstaat.xlsx">Exporteer meetstaat (Excel)</a>
         <a class="btn" href="/projects/{{ project.id }}/plan.svg" target="_blank">Geannoteerd plan (SVG)</a>
-        <button class="btn" type="button" disabled>Verstuur per e-mail (placeholder)</button>
-        <button class="btn" type="button" disabled>Deel link voor online akkoord (placeholder)</button>
+        <a class="btn" href="#mailen">Verstuur per e-mail ↓</a>
+        {% if project.status == 'gemaakt' %}
+        <form method="post" action="/projects/{{ project.id }}/status" style="display:contents">
+          <input type="hidden" name="to" value="gestuurd">
+          <button class="btn" type="submit">Zelf verstuurd? Markeer als gestuurd</button>
+        </form>
+        {% endif %}
       </div>
+    </div>
+    <div class="card" id="online-akkoord">
+      <span class="lbl">Online akkoord</span>
+      {% if quote.decision %}
+      <p class="notice small" style="margin:0 0 10px"><strong>{{ 'Aanvaard' if quote.decision == 'aanvaard' else 'Geweigerd' }}</strong> door {{ quote.decided_name or 'de klant' }} op {{ quote.decided_at.strftime('%d/%m/%Y %H:%M') }}{% if quote.decision_note %}<br>“{{ quote.decision_note }}”{% endif %}</p>
+      {% endif %}
+      <p class="muted small" style="margin:0 0 8px">De mail bevat knoppen om te aanvaarden of te weigeren. Je kan deze link ook zelf delen (bv. via WhatsApp).</p>
+      <div class="secret"><input id="public-link" value="{{ public_link }}" readonly aria-label="Link voor de klant"><button class="btn sm" type="button" id="public-copy">Kopieer</button><a class="btn sm" href="{{ public_link }}" target="_blank" rel="noopener">Open</a></div>
+      {% if 'localhost' in public_link or '127.0.0.1' in public_link %}<p class="notice warn small" style="margin:8px 0 0">Deze link werkt alleen op deze computer. Zet OFFERTE_BASE_URL in .env op het publieke adres van de app zodat klanten hem kunnen openen.</p>{% endif %}
+    </div>
+    <script>
+      document.getElementById('public-copy').addEventListener('click', function () {
+        var el = document.getElementById('public-link'); el.select(); navigator.clipboard && navigator.clipboard.writeText(el.value);
+        this.textContent = 'Gekopieerd';
+      });
+    </script>
+    <div class="card" id="mailen">
+      <span class="lbl">E-mail naar de klant</span>
+      {% if not smtp_ready %}
+      <p class="notice small" style="margin:0 0 10px">Nog geen mailserver ingesteld: de mail wordt klaargezet in de outbox en kan je later versturen. Zie <a href="/account#integraties">Account → Integraties</a>.</p>
+      {% elif mail_redirect_to %}
+      <p class="notice small" style="margin:0 0 10px">Testmodus: de mail gaat naar {{ mail_redirect_to }}, niet naar de klant.</p>
+      {% endif %}
+      <form method="post" action="/projects/{{ project.id }}/offerte/mail" class="stack">
+        <div class="field"><label class="lbl" for="mail-to">Aan</label><input id="mail-to" name="to" type="email" required value="{{ mail_defaults.to }}" placeholder="klant@voorbeeld.be"></div>
+        <div class="field"><label class="lbl" for="mail-subject">Onderwerp</label><input id="mail-subject" name="subject" required value="{{ mail_defaults.subject }}"></div>
+        <div class="field"><label class="lbl" for="mail-body">Bericht</label><textarea id="mail-body" name="body" rows="10" required>{{ mail_defaults.body }}</textarea></div>
+        <p class="muted small" style="margin:0">Bijlage: offerte-{{ quote.number }}-v{{ quote.version }}.pdf · antwoorden komen bij {{ org.email }}</p>
+        <button class="btn primary" type="submit">{{ 'Verstuur offerte' if smtp_ready else 'Zet klaar in outbox' }}{% if quote_mails %} (opnieuw){% endif %}</button>
+      </form>
+      {% if quote_mails %}
+      <ul class="small" style="list-style:none;padding:0;margin:12px 0 0">
+        {% for m in quote_mails %}
+        <li style="margin-top:6px">
+          {{ m.created_at.strftime('%d/%m %H:%M') }} · {{ m.to }}{% if m.sent_to and m.sent_to != m.to %} <span class="tag warn" title="Testmodus">test → {{ m.sent_to }}</span>{% endif %}
+          · <span class="st-mail st-{{ m.status }}">{{ {'wacht': 'wacht in outbox', 'verzonden': 'verzonden', 'mislukt': 'mislukt'}[m.status] }}</span>
+          {% if m.error %}<br><span style="color:var(--warn)">{{ m.error }}</span>{% endif %}
+          {% if m.status != 'verzonden' and smtp_ready %}<form method="post" action="/outbox/{{ m.id }}/verstuur?terug=offerte" style="display:inline"><button class="btn sm" type="submit">Verstuur nu</button></form>{% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+      {% endif %}
     </div>
     <div class="card">
       <span class="lbl">Koppelingen</span>

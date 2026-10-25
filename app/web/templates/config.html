@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Configuratie · Offerte-AI{% endblock %}
+{% block watch %}kind:skill{% endblock %}
 {% block content %}
 <h1>Configuratie</h1>
 <p class="lead">Prijzen, uurtarief en rekenregels. Elke wijziging wordt een nieuwe versie; bestaande offertes blijven op hun versie.</p>
@@ -10,7 +11,7 @@
       <h2>Prijslijst &amp; rendement <span class="tag">v{{ cfg.version }}</span></h2>
       <div class="scroll">
       <table>
-        <thead><tr><th>Post</th><th>Eenheid</th><th>Materiaal €</th><th>Per</th><th>Rendement</th><th>Uren/eenh.</th></tr></thead>
+        <thead><tr><th>Post</th><th>Eenheid</th><th>Materiaal €</th><th>Per</th><th>Rendement</th><th>Uren/eenh.</th><th title="Vink aan om de voorraad bij te houden; leeg = onbekend.">Voorraad</th></tr></thead>
         <tbody>
         {% for it in cfg.items %}
         <tr>
@@ -20,6 +21,10 @@
           <td>{{ it.material_unit or it.unit }}</td>
           <td style="width:110px">{% if it.coverage %}<input class="sm" name="coverage_{{ it.code }}" value="{{ it.coverage }}" title="eenheden per {{ it.material_unit }} per laag">{% else %}—{% endif %}</td>
           <td style="width:90px"><input class="sm" name="hours_{{ it.code }}" value="{{ it.hours_per_unit }}" title="{{ 'per laag' if it.hours_scale_with_layers else 'totaal' }}"></td>
+          <td style="width:170px"><span class="with-unit">
+            <input type="checkbox" name="track_{{ it.code }}" {{ 'checked' if it.code in tracked else '' }} title="Voorraad bijhouden voor deze post">
+            <input class="sm" name="stock_{{ it.code }}" value="{{ stock[it.code].qty|qty if it.code in stock else '' }}" placeholder="{{ '?' if it.code in tracked else '—' }}" {{ '' if it.code in tracked else 'disabled' }} aria-label="In voorraad">
+            <span>{{ it.material_unit or it.unit }}</span></span></td>
         </tr>
         {% endfor %}
         </tbody>
@@ -36,6 +41,12 @@
       <p class="muted" style="font-size:13px;margin-top:10px">Importeren uit CSV / leverancierslijst en koppeling boekhouding: placeholders voor later.</p>
     </div>
     <div class="card">
+      <h2>Aankoop &amp; voorraad</h2>
+      <p class="muted small">Bij een aanvaarde offerte vergelijken we het nodige materiaal met de voorraad (kolom rechts in de prijslijst). Bij een tekort gaat een aankooplijst naar deze contactpersoon.</p>
+      <div class="field"><label class="lbl" for="purchase_contact_email">Contactpersoon aankoop (e-mail)</label><input id="purchase_contact_email" name="purchase_contact_email" type="email" value="{{ org.purchase_contact_email or '' }}" placeholder="{{ org.email }}"></div>
+      <p class="muted small" style="margin:0">Mails worden pas echt verstuurd als er een mailserver ingesteld is (<code>OFFERTE_SMTP_HOST</code>); anders staan ze klaar in de historiek van het project. De toekomstige voorraad-agent kan de voorraad bijwerken via <code>PUT /api/v1/stock</code>.</p>
+    </div>
+    <div class="card">
       <h2>API &amp; MCP</h2>
       <p style="font-size:14px">API-key voor integraties (header <code>X-API-Key</code>): <code>{{ org.api_key }}</code> — documentatie op <a href="/docs">/docs</a>.</p>
       <p style="font-size:14px">MCP-server: lokaal via <code>python -m app.mcp_server</code> (stdio) of op <code>/mcp</code> van deze server (streamable HTTP). Zie README.</p>
@@ -46,6 +57,7 @@
       <h2>Sector-skill · {{ skill.label }} <span class="tag">basis v{{ skill.version }}{% if override %} · jouw v{{ override.version }}{% endif %}</span></h2>
       <p class="muted" style="font-size:14px">De basisregels onderhouden wij per sector (bestand <code>skills/{{ skill.sector }}/rules.yaml</code>). Jouw aanvullingen gaan voor op de basis.</p>
       <details><summary>Basisregels (alleen-lezen)</summary><pre>{{ skill_rules }}</pre></details>
+      {% if skill_job %}<div class="ai-working"><span class="ring" aria-hidden="true"></span><div><strong>Claude vertaalt je aanvullingen</strong><span class="muted small">De nieuwe versie verschijnt hier vanzelf.</span></div></div>{% endif %}
       <div class="field" style="margin-top:12px">
         <label class="lbl" for="override_text">Jouw aanvullingen (gewone taal)</label>
         <textarea id="override_text" name="override_text" rows="8" placeholder="- Keukens en badkamers altijd vochtwerend.
@@ -62,4 +74,15 @@
   </div>
 </div>
 </form>
+<script>
+  // ticking "voorraad bijhouden" makes the quantity editable right away
+  document.querySelectorAll('input[name^="track_"]').forEach((cb) => {
+    cb.addEventListener("change", () => {
+      const qty = document.querySelector(`input[name="stock_${cb.name.slice(6)}"]`);
+      qty.disabled = !cb.checked;
+      qty.placeholder = cb.checked ? "?" : "—";
+      if (cb.checked) qty.focus();
+    });
+  });
+</script>
 {% endblock %}

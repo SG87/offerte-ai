@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}To-do · Offerte-AI{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>To-do</h1>
+    <p class="lead" style="margin:0">Wat er moet gebeuren: bestellingen bevestigen, werk inplannen, facturen opvolgen. Het platform zet ze er zelf op; jij ook.</p>
+  </div>
+</div>
+
+<nav class="tabs">
+  <a href="/todo?status=open" class="{{ 'on' if status == 'open' else '' }}">Open <span class="count">{{ n_open }}</span></a>
+  <a href="/todo?status=gedaan" class="{{ 'on' if status == 'gedaan' else '' }}">Gedaan</a>
+  <form method="get" action="/todo" class="right actions"><input type="hidden" name="status" value="{{ status }}">
+    <select name="wie" class="sm" style="width:auto" onchange="this.form.submit()"><option value="">iedereen</option>{% for e in active_emps %}<option value="{{ e.id }}" {{ 'selected' if wie == e.id else '' }}>{{ e.name }}</option>{% endfor %}</select>
+  </form>
+</nav>
+
+<div class="row">
+  <div class="col wide">
+    <section class="card">
+      {% if items %}
+      <ul class="todos">
+        {% for t in items %}
+        {% set late = t.due and t.due < today and t.status == 'open' %}
+        <li class="k-{{ t.kind }} {{ 'late' if late else '' }} {{ 'done' if t.status == 'gedaan' else '' }}">
+          <form method="post" action="/todo/{{ t.id }}/{{ 'heropen' if t.status == 'gedaan' else 'klaar' }}"><button class="check" type="submit" title="{{ 'Heropen' if t.status == 'gedaan' else 'Markeer als gedaan' }}">{% if t.status == 'gedaan' %}✓{% endif %}</button></form>
+          <div class="body">
+            <span class="title">{% if t.link %}<a href="{{ t.link }}">{{ t.title }}</a>{% else %}{{ t.title }}{% endif %}</span>
+            {% if t.detail %}<span class="detail">{{ t.detail }}</span>{% endif %}
+            <span class="meta">
+              <span class="tag">{{ t.kind }}</span>
+              {% if t.project_id in projects %}<a href="/projects/{{ t.project_id }}">{{ projects[t.project_id].name }}</a>{% endif %}
+              {% if t.assignee_id in emps %}<span>{{ emps[t.assignee_id].name }}</span>{% endif %}
+              {% if t.due %}<span class="{{ 'late-text' if late else '' }}">{{ 'te laat sinds' if late else 'tegen' }} {{ t.due.strftime('%d/%m') }}</span>{% endif %}
+              {% if t.done_at %}<span>gedaan {{ t.done_at.strftime('%d/%m %H:%M') }}</span>{% endif %}
+            </span>
+          </div>
+          <form method="post" action="/todo/{{ t.id }}/verwijder"><button class="btn sm ghost" type="submit" title="Verwijder">×</button></form>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <div class="empty"><strong>{{ 'Niets open' if status == 'open' else 'Nog niets afgewerkt' }}</strong><span>{{ 'Goed bezig.' if status == 'open' else 'Afgewerkte to-do’s komen hier.' }}</span></div>
+      {% endif %}
+    </section>
+  </div>
+  <div class="col side">
+    <section class="card">
+      <h2>Nieuwe to-do</h2>
+      <form method="post" action="/todo">
+        <div class="field"><label class="lbl" for="title">Wat</label><input id="title" name="title" required placeholder="bv. Ladder laten keuren"></div>
+        <div class="field"><label class="lbl" for="detail">Details</label><input id="detail" name="detail"></div>
+        <div class="grid" style="grid-template-columns:1fr 1fr">
+          <div><label class="lbl" for="due">Tegen</label><input id="due" name="due" type="date"></div>
+          <div><label class="lbl" for="assignee_id">Wie</label><select id="assignee_id" name="assignee_id"><option value="">—</option>{% for e in active_emps %}<option value="{{ e.id }}">{{ e.name }}</option>{% endfor %}</select></div>
+        </div>
+        <div class="field" style="margin-top:12px"><label class="lbl" for="project_id">Project</label><select id="project_id" name="project_id"><option value="">—</option>{% for p in projects.values() %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}</select></div>
+        <button class="btn primary" type="submit">Toevoegen</button>
+      </form>
+    </section>
+  </div>
+</div>
+{% endblock %}

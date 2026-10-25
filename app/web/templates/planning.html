@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block title %}Planning · Offerte-AI{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Planning</h1>
+    <p class="lead" style="margin:0">Klik op een dag om werk in te plannen. Afwezige werknemers staan grijs en kunnen niet ingepland worden.</p>
+  </div>
+  <div class="cal-nav">
+    <a class="btn sm" href="?maand={{ prev_month }}{{ '&dag=' ~ selected if selected else '' }}">‹</a>
+    <strong>{{ month_label }}</strong>
+    <a class="btn sm" href="?maand={{ next_month }}{{ '&dag=' ~ selected if selected else '' }}">›</a>
+    <a class="btn sm ghost" href="/planning?dag={{ today }}">vandaag</a>
+  </div>
+</div>
+
+{% if open_plan_todos %}
+<div class="notice">
+  <strong>In te plannen:</strong>
+  {% for t in open_plan_todos %}<a href="/planning?dag={{ selected or today }}&project={{ t.project_id }}">{{ projects[t.project_id].name if t.project_id in projects else t.title }}</a>{% if not loop.last %} · {% endif %}{% endfor %}
+</div>
+{% endif %}
+
+<div class="plan-layout">
+  <section class="card cal-card">
+    <div class="cal">
+      {% for n in ['ma','di','wo','do','vr','za','zo'] %}<div class="cal-h">{{ n }}</div>{% endfor %}
+      {% for week in weeks %}{% for d in week %}
+      {% set its = items_by_day.get(d, []) %}
+      {% set abs = absences_by_day.get(d, []) %}
+      <a class="cal-d {{ '' if in_month(d) else 'out' }} {{ 'today' if d == today else '' }} {{ 'sel' if d == selected else '' }} {{ 'wknd' if d.weekday() > 4 else '' }}" href="/planning?dag={{ d }}{{ '&project=' ~ preselect_project if preselect_project else '' }}">
+        <span class="n">{{ d.day }}</span>
+        {% for it in its[:3] %}
+        {% set ids = who.get(it.id, []) %}
+        <span class="ev work" style="--c:{{ color_of(emps[ids[0]]) if ids and ids[0] in emps else '#9aa3af' }}" title="{{ projects[it.project_id].name if it.project_id in projects else (it.title or 'werk') }}{% if ids %} · {% for i in ids %}{{ emps[i].name if i in emps else i }}{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}">
+          {{ projects[it.project_id].name if it.project_id in projects else (it.title or 'werk') }}
+          {% if ids %}<small>{% for i in ids %}<b style="background:{{ color_of(emps[i]) }}" title="{{ emps[i].name }}">{{ emps[i].name[:1] }}</b>{% endfor %}</small>{% endif %}
+        </span>
+        {% endfor %}
+        {% if its|length > 3 %}<span class="more">+{{ its|length - 3 }}</span>{% endif %}
+        {% if abs %}<span class="ev abs" title="{% for a in abs %}{{ emps[a.employee_id].name if a.employee_id in emps else '' }} ({{ a.reason }}){% if not loop.last %}, {% endif %}{% endfor %}">{{ abs|length }} afwezig</span>{% endif %}
+      </a>
+      {% endfor %}{% endfor %}
+    </div>
+    <div class="legend" style="margin-top:12px">
+      {% for e in active_emps %}<span><i style="background:{{ color_of(e) }};border-color:{{ color_of(e) }}"></i>{{ e.name }}{% if workload.get(e.id) %} <span class="muted">· {{ workload[e.id]|qty }} u</span>{% endif %}</span>{% endfor %}
+      {% if not active_emps %}<a href="/contacten/werknemers">Voeg werknemers toe om ze in te plannen →</a>{% endif %}
+    </div>
+  </section>
+
+  <aside class="card day-panel">
+    {% if selected %}
+    <div class="card-head">
+      <div class="card-title"><h2>{{ selected.strftime('%A %d/%m')|replace('Monday','maandag')|replace('Tuesday','dinsdag')|replace('Wednesday','woensdag')|replace('Thursday','donderdag')|replace('Friday','vrijdag')|replace('Saturday','zaterdag')|replace('Sunday','zondag') }}</h2></div>
+      {% if editing %}<a class="btn sm ghost" href="/planning?dag={{ selected }}">+ nieuw blok</a>{% endif %}
+    </div>
+
+    {% if day_items and not editing %}
+    <ul class="day-items">
+      {% for it in day_items %}
+      {% set ids = who.get(it.id, []) %}
+      <li>
+        <a class="day-item" href="/planning?dag={{ selected }}&item={{ it.id }}">
+          <strong>{{ projects[it.project_id].name if it.project_id in projects else (it.title or 'Vrij blok') }}</strong>
+          <span class="muted small">{% if it.start_time %}{{ it.start_time }} · {% endif %}{% if it.hours %}{{ it.hours|qty }} u · {% endif %}{% if it.date_from != it.date_to %}{{ it.date_from.strftime('%d/%m') }}–{{ it.date_to.strftime('%d/%m') }} · {% endif %}{{ it.status }}</span>
+          <span class="people">{% for i in ids %}<span class="chip" style="border-color:{{ color_of(emps[i]) }}"><i class="swatch" style="background:{{ color_of(emps[i]) }}"></i>{{ emps[i].name }}</span>{% else %}<span class="tag warn">niemand toegewezen</span>{% endfor %}</span>
+          {% if it.note %}<span class="small">{{ it.note }}</span>{% endif %}
+        </a>
+      </li>
+      {% endfor %}
+    </ul>
+    <h2 style="margin-top:16px">Nieuw blok</h2>
+    {% elif not editing %}
+    <p class="muted small">Nog niets gepland op deze dag.</p>
+    {% endif %}
+
+    <form method="post" action="/planning/items" class="plan-form">
+      {% if editing %}<input type="hidden" name="item_id" value="{{ editing.id }}">{% endif %}
+      <div class="field"><label class="lbl" for="project_id">Project</label>
+        <select id="project_id" name="project_id">
+          <option value="">— vrij blok (geen project) —</option>
+          {% for p in open_projects %}<option value="{{ p.id }}" {{ 'selected' if (editing and editing.project_id == p.id) or (not editing and preselect_project == p.id) else '' }}>{{ p.name }} · {{ wf.label(p.status) }}</option>{% endfor %}
+        </select></div>
+      <div class="field"><label class="lbl" for="title">Omschrijving (bij vrij blok)</label><input id="title" name="title" value="{{ editing.title or '' if editing else '' }}" placeholder="bv. magazijn opruimen"></div>
+      <div class="grid" style="grid-template-columns:1fr 1fr">
+        <div><label class="lbl" for="date_from">Van</label><input id="date_from" name="date_from" type="date" required value="{{ editing.date_from if editing else selected }}"></div>
+        <div><label class="lbl" for="date_to">Tot en met</label><input id="date_to" name="date_to" type="date" value="{{ editing.date_to if editing else selected }}"></div>
+        <div><label class="lbl" for="start_time">Start</label><input id="start_time" name="start_time" type="time" value="{{ editing.start_time or '' if editing else '08:00' }}"></div>
+        <div><label class="lbl" for="hours">Uren per dag</label><input id="hours" name="hours" type="number" step="0.5" min="0" value="{{ editing.hours|qty if editing and editing.hours else '' }}" placeholder="8"></div>
+      </div>
+      <div class="field" style="margin-top:12px"><span class="lbl">Wie</span>
+        <div class="people-pick">
+          {% for e in active_emps %}
+          {% set away = e.id in absent_sel %}
+          <label class="pick {{ 'away' if away else '' }}" title="{{ 'afwezig op deze dag' if away else '' }}">
+            <input type="checkbox" name="employee_ids" value="{{ e.id }}" {{ 'checked' if e.id in editing_emps else '' }} {{ 'disabled' if away and e.id not in editing_emps else '' }}>
+            <i class="swatch" style="background:{{ color_of(e) }}"></i>{{ e.name }}{% if away %} <small>afwezig</small>{% endif %}
+          </label>
+          {% else %}<a class="small" href="/contacten/werknemers">Eerst werknemers toevoegen →</a>{% endfor %}
+        </div></div>
+      <div class="field"><label class="lbl" for="note">Notitie</label><input id="note" name="note" value="{{ editing.note or '' if editing else '' }}" placeholder="bv. sleutel bij de buren"></div>
+      {% if editing %}
+      <div class="field"><label class="lbl" for="status">Status</label><select id="status" name="status">{% for s in ['gepland','bezig','klaar'] %}<option {{ 'selected' if editing.status == s else '' }}>{{ s }}</option>{% endfor %}</select></div>
+      {% endif %}
+      <div class="actions">
+        <button class="btn primary" type="submit">{{ 'Bewaar wijzigingen' if editing else 'Inplannen' }}</button>
+        {% if editing %}<button class="btn ghost danger" type="submit" formaction="/planning/items/{{ editing.id }}/verwijder" formnovalidate>Verwijder</button>{% endif %}
+      </div>
+    </form>
+    {% else %}
+    <div class="empty"><strong>Kies een dag</strong><span>Klik links op een dag om te zien wie wat doet en om werk in te plannen.</span></div>
+    {% endif %}
+  </aside>
+</div>
+{% endblock %}

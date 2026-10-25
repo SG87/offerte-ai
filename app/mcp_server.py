@@ -15,19 +15,20 @@ Organisation (v1, single account): OFFERTE_MCP_ORG_EMAIL in .env, else the first
 from __future__ import annotations
 
 import json
+from datetime import date
 from typing import Any
 
 import httpx
 from mcp.server import MCPServer
 from sqlmodel import select
 
-from app import services
+from app import planning, services, workflow
 from app.ai.client import AIUnavailable
 from app.ai.plan_analysis import analyze_plan_image
 from app.config import get_settings
 from app.db import init_db, session_scope
 from app.engine import load_skill
-from app.models import Organisation
+from app.models import Customer, Organisation
 from app.schemas import Geometry, Zone
 
 mcp = MCPServer(
@@ -82,32 +83,68 @@ def get_pricing_config() -> dict[str, Any]:
 
 
 @mcp.tool()
+def list_customers() -> list[dict[str, Any]]:
+    """Klanten van de gebruiker. kind b2c = offerte incl. btw, b2b = offerte excl. btw."""
+    org = _org()
+    with session_scope() as session:
+        rows = session.exec(
+            select(Customer).where(Customer.org_id == org.id, Customer.active == True).order_by(Customer.name)  # noqa: E712
+        ).all()
+        return [
+            {"customer_id": c.id, "name": c.name, "kind": c.kind, "language": c.language, "address": c.address}
+            for c in rows
+        ]
+
+
+@mcp.tool()
 def quote_from_zones(
     zones: list[Zone],
     scope: list[str],
     project_name: str,
+    customer_id: int | None = None,
     client_name: str | None = None,
+    client_type: str | None = None,
+    client_vat_number: str | None = None,
+    client_language: str | None = None,
     client_address: str | None = None,
-    work_type: str = "renovatie_woning_10j",
+    work_type: str | None = None,
     scale_confirmed: bool = False,
     notes: str | None = None,
 ) -> dict[str, Any]:
-    """Maak een project + offerte uit zones (ruimtes of tuinzones) met maten.
+    """Maak een project + offerte uit zones (ruimtes of tuinzones) met maten. Een project heeft altijd een klant.
 
+    Klant: customer_id van een bestaande klant (zie list_customers), of client_name: een bestaande klant met die
+    naam, anders wordt hij aangemaakt met client_type b2c (particulier, offerte incl. btw) of b2b (bedrijf,
+    offerte excl. btw), eventueel client_vat_number en client_language (nl | fr | en: taal van de offerte,
+    standaard die van het bedrijf). Vraag de gebruiker naar de klant als die onbekend is.
     zones: per zone naam, kind (ruimte|terras|gazon|haag|border|oprit|vijver), area_m2, perimeter_m,
            height_m, openings (raam/deur: width_m, height_m, count), tags (bv. 'vochtig'), in_scope.
     scope: welke werken, bv. ["muren","plafonds","houtwerk"] of ["terras","gazon","beplanting","graafwerk"].
-    work_type: renovatie_woning_10j (6 % btw BE) | nieuwbouw | niet_woning (21 %).
+    client_address: werfadres (leeg = adres van de klant).
+    work_type: renovatie_woning_10j (6 % btw BE) | nieuwbouw | niet_woning (21 %); leeg = 6 % voor b2c, 21 % voor b2b.
     Geeft meetstaat, totalen, aannames en download-links terug.
     """
     org = _org()
     settings = get_settings()
     with session_scope() as session:
+        try:
+            customer = services.resolve_customer(
+                session,
+                org,
+                customer_id=customer_id,
+                name=client_name,
+                kind=client_type,
+                address=client_address,
+                vat_number=client_vat_number,
+                language=client_language,
+            )
+        except services.CustomerRequired as exc:
+            return {"error": str(exc)}
         project = services.create_project(
             session,
             org,
             project_name,
-            client_name=client_name,
+            customer,
             client_address=client_address,
             work_type=work_type,
             scope=scope,
@@ -115,10 +152,14 @@ def quote_from_zones(
         )
         geometry = Geometry(source="mcp", scale_confirmed=scale_confirmed, zones=zones)
         services.save_geometry(session, project, geometry)
+        services.propose_after_reading(session, org, project)  # Claude read the plan: propose crew and dates
         quote, result = services.run_quote(session, org, project)
         base = f"{settings.base_url}/projects/{project.id}"
         return {
             "project_id": project.id,
+            "customer": {"customer_id": customer.id, "name": customer.name, "kind": customer.kind},
+            "prices": "incl. btw" if services.prices_incl_vat(customer) else "excl. btw",
+            "voorstel_uitvoering": planning.proposal_sentence(project, {}),
             "quote_number": f"{quote.number} v{quote.version}",
             "indicative": result.indicative,
             "totals": result.totals.model_dump(),
@@ -161,6 +202,70 @@ def analyze_plan_image_url(
     except AIUnavailable as exc:
         return {"error": str(exc)}
     return geometry.model_dump()
+
+
+@mcp.tool()
+def list_projects() -> list[dict[str, Any]]:
+    """Projecten van de gebruiker met hun status (offerte voorbereid … afgerond)."""
+    org = _org()
+    with session_scope() as session:
+        return [
+            {"project_id": p.id, "name": p.name, "client": p.client_name, "status": workflow.label(p.status)}
+            for p in services.list_projects(session, org)
+        ]
+
+
+@mcp.tool()
+def set_project_status(
+    project_id: int, status: str, note: str | None = None, on: str | None = None
+) -> dict[str, Any]:
+    """Zet de status van een project, bv. 'gestuurd', 'aanvaard' of 'factuur_betaald'.
+
+    Volgorde: voorbereid, gemaakt, gestuurd, aanvaard, in_uitvoering, werk_afgerond, factuur_verstuurd,
+    factuur_betaald, afgerond; 'geweigerd' sluit het project af. Bij 'aanvaard' volgen de voorraadcontrole
+    (aankooplijst bij tekort) en de vraag om het werk in te plannen.
+    on (JJJJ-MM-DD), bij in_uitvoering en werk_afgerond: de dag waarop het werk echt startte of af was;
+    standaard vandaag, nooit in de toekomst. De planning schuift mee.
+    """
+    org = _org()
+    with session_scope() as session:
+        p = services.get_project(session, org, project_id)
+        if not p:
+            return {"error": "Project niet gevonden"}
+        try:
+            when = date.fromisoformat(on) if on else None
+        except ValueError:
+            return {"error": f"Ongeldige datum '{on}' (verwacht JJJJ-MM-DD)."}
+        try:
+            workflow.change_status(session, org, p, status, note, actor="mcp", on=when)
+        except workflow.TransitionError as exc:
+            return {"error": str(exc), "allowed": [workflow.label(s) for s in workflow.allowed(p.status)]}
+        return {
+            "project_id": p.id,
+            "status": workflow.label(p.status),
+            "history": [e.text for e in workflow.history(session, p)[:5]],
+        }
+
+
+@mcp.tool()
+def mail_quote(project_id: int, to: str | None = None, message: str | None = None) -> dict[str, Any]:
+    """Mail de laatste offerte (PDF in bijlage) naar de klant. Leeg 'to' = e-mailadres van de klant,
+    leeg 'message' = standaardtekst. Eenmaal verzonden gaat het project naar 'Offerte gestuurd'."""
+    org = _org()
+    with session_scope() as session:
+        p = services.get_project(session, org, project_id)
+        q = services.latest_quote(session, p) if p else None
+        if not q:
+            return {"error": "Project niet gevonden of nog geen offerte berekend"}
+        defaults = workflow.quote_mail_defaults(session, org, p, q)
+        try:
+            msg = workflow.send_quote(
+                session, org, p, q, to or defaults["to"], defaults["subject"], message or defaults["body"], actor="mcp"
+            )
+        except workflow.TransitionError as exc:
+            return {"error": str(exc)}
+        return {"to": msg.to, "sent_to": msg.sent_to, "status": msg.status, "error": msg.error,
+                "project_status": workflow.label(p.status)}
 
 
 @mcp.tool()

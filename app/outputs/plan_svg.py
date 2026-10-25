@@ -22,18 +22,38 @@ COLOURS = {
 DEFAULT = ("#eeeeee", "#555555")
 
 
+def _box(z) -> tuple[float, float]:
+    """Width and depth of a zone without polygon: from area + perimeter when both are known, else a square."""
+    if z.area_m2:
+        if z.perimeter_m:
+            half = z.perimeter_m / 2  # w + d = P/2, w * d = A
+            disc = half * half - 4 * z.area_m2
+            if disc >= 0:
+                w = (half + math.sqrt(disc)) / 2
+                return w, z.area_m2 / w
+        side = math.sqrt(z.area_m2)
+        return side, side
+    return max(z.length_m or 2.0, 1.0), 0.6
+
+
 def _auto_layout(geometry: Geometry) -> dict[str, list[tuple[float, float]]]:
-    """Zones without a polygon: lay them out as squares in a row, proportional to area."""
+    """Zones without a polygon: rectangles proportional to their size, wrapped into rows like a floor plan sheet."""
     polys: dict[str, list[tuple[float, float]]] = {}
-    x = 0.0
+    boxes = {z.id: _box(z) for z in geometry.zones if not z.polygon}
+    gap = 0.6
+    total = sum(w * d for w, d in boxes.values())
+    row_width = max(math.sqrt(total) * 1.8, max((w for w, _ in boxes.values()), default=1.0))
+    x = y = row_depth = 0.0
     for z in geometry.zones:
         if z.polygon:
             polys[z.id] = [tuple(p) for p in z.polygon]
             continue
-        side = math.sqrt(z.area_m2) if z.area_m2 else max(z.length_m or 2.0, 1.0)
-        h = side if z.area_m2 else 0.6
-        polys[z.id] = [(x, 0.0), (x + side, 0.0), (x + side, h), (x, h)]
-        x += side + 0.5
+        w, d = boxes[z.id]
+        if x > 0 and x + w > row_width:
+            x, y, row_depth = 0.0, y + row_depth + gap, 0.0
+        polys[z.id] = [(x, y), (x + w, y), (x + w, y + d), (x, y + d)]
+        x += w + gap
+        row_depth = max(row_depth, d)
     return polys
 
 
@@ -80,18 +100,24 @@ def build_plan_svg(geometry: Geometry, result: QuoteResult | None = None, width_
         )
         cx = sum(tx(x) for x, _ in poly) / len(poly)
         cy = sum(ty(y) for _, y in poly) / len(poly)
-        label = html.escape(z.name)
+        box_w = max(tx(x) for x, _ in poly) - min(tx(x) for x, _ in poly)
+        box_h = max(ty(y) for _, y in poly) - min(ty(y) for _, y in poly)
+        name = z.name if len(z.name) * 7 < box_w - 6 else z.name[: max(int((box_w - 6) / 7) - 1, 3)] + "…"
+        label = html.escape(name)
         sub = f"{z.area_m2:g} m²" if z.area_m2 else (f"{z.length_m:g} lm" if z.length_m else "")
         if not z.in_scope:
             sub = "buiten scope"
         elif codes:
             sub += " · " + ", ".join(sorted(set(codes)))[:40]
+        size = 12 if box_w > 90 else 10
         parts.append(
-            f'<text x="{cx:.1f}" y="{cy - 4:.1f}" text-anchor="middle" font-size="13" font-weight="600" fill="#2b2b2b">{label}</text>'
+            f'<text x="{cx:.1f}" y="{cy - 3:.1f}" text-anchor="middle" font-size="{size}" font-weight="600" fill="#2b2b2b"><title>{html.escape(z.name)}</title>{label}</text>'
         )
-        parts.append(
-            f'<text x="{cx:.1f}" y="{cy + 12:.1f}" text-anchor="middle" font-size="10" fill="#444444">{html.escape(sub)}</text>'
-        )
+        if box_h > 34 and box_w > 60:
+            sub = sub if len(sub) * 5.5 < box_w - 6 else sub[: max(int((box_w - 6) / 5.5) - 1, 3)] + "…"
+            parts.append(
+                f'<text x="{cx:.1f}" y="{cy + 12:.1f}" text-anchor="middle" font-size="10" fill="#444444">{html.escape(sub)}</text>'
+            )
         # openings as small ticks along the first edge (schematic, not positioned)
         if z.openings and len(poly) >= 2:
             (x0, y0), (x1, y1) = poly[0], poly[1]

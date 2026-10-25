@@ -65,10 +65,10 @@ default_prices:
   round_hours_to: 0.5
   items:
     - { code: graafwerk, label: "Graafwerk en afvoer grond", unit: m3, material_price: 25.00, hours_per_unit: 0.80 }
-    - { code: fundering_stabilise, label: "Fundering in stabilisé", unit: m3, material_price: 95.00, hours_per_unit: 1.20 }
-    - { code: terras_tegels, label: "Terrastegels 60x60 (incl. voegen)", unit: m2, material_price: 38.00, hours_per_unit: 0.90 }
-    - { code: oprit_klinkers, label: "Klinkers oprit (incl. opsluiting)", unit: m2, material_price: 42.00, hours_per_unit: 1.00 }
+    - { code: fundering_stabilise, label: "Fundering in stabilisé", unit: m3, material_price: 95.00, hours_per_unit: 1.20, stock: true }
+    - { code: terras_tegels, label: "Terrastegels 60x60 (incl. voegen)", unit: m2, material_price: 38.00, hours_per_unit: 0.90, stock: true }
+    - { code: oprit_klinkers, label: "Klinkers oprit (incl. opsluiting)", unit: m2, material_price: 42.00, hours_per_unit: 1.00, stock: true }
     - { code: gazon_aanleg, label: "Gazon aanleggen (frezen, egaliseren, inzaaien)", unit: m2, material_price: 2.50, hours_per_unit: 0.15 }
-    - { code: haag, label: "Haagplanten (4 per lm)", unit: lm, material_price: 4.50, material_unit: stuk, coverage: 0.25, hours_per_unit: 0.30 }
-    - { code: beplanting, label: "Beplanting borders", unit: stuk, material_price: 9.00, hours_per_unit: 0.20 }
+    - { code: haag, label: "Haagplanten (4 per lm)", unit: lm, material_price: 4.50, material_unit: stuk, coverage: 0.25, hours_per_unit: 0.30, stock: true }
+    - { code: beplanting, label: "Beplanting borders", unit: stuk, material_price: 9.00, hours_per_unit: 0.20, stock: true }
     - { code: werf, label: "Werfinrichting, machines en opkuis", unit: ruimte, material_price: 40.00, hours_per_unit: 1.00 }

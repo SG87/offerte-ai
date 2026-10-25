@@ -1,40 +1,101 @@
 {% extends "base.html" %}
 {% block title %}Projecten · Offerte-AI{% endblock %}
 {% block content %}
-<div class="row">
-  <div class="col wide">
+<div class="page-head">
+  <div>
     <h1>Projecten</h1>
-    <p class="lead">Elke klus is een project: plan → meetstaat → offerte.</p>
-    <div class="card">
-      {% if projects %}
-      <table>
-        <thead><tr><th>Project</th><th>Klant</th><th>Status</th><th></th></tr></thead>
-        <tbody>
-        {% for p in projects %}
-        <tr><td><a href="/projects/{{ p.id }}">{{ p.name }}</a></td><td>{{ p.client_name or '—' }}</td><td><span class="tag">{{ p.status }}</span></td>
-          <td class="num"><a class="btn sm" href="/projects/{{ p.id }}">Open</a>{% if p.status == 'offerte' %} <a class="btn sm" href="/projects/{{ p.id }}/offerte">Offerte</a>{% endif %}</td></tr>
-        {% endfor %}
-        </tbody>
-      </table>
-      {% else %}<p class="muted">Nog geen projecten. Maak er rechts één aan.</p>{% endif %}
-    </div>
+    <p class="lead" style="margin:0">Van offerte tot betaalde factuur. Open een project om de status te wijzigen.</p>
   </div>
-  <div class="col">
-    <div class="card">
+  <details class="new-project">
+    <summary class="btn primary">+ Nieuw project</summary>
+    <div class="card pop">
       <h2>Nieuw project</h2>
       <form method="post" action="/projects">
         <div class="field"><label class="lbl" for="name">Naam</label><input id="name" name="name" required placeholder="bv. Binnenschilderwerk gelijkvloers"></div>
-        <div class="field"><label class="lbl" for="client_name">Klant</label><input id="client_name" name="client_name"></div>
-        <div class="field"><label class="lbl" for="client_address">Werfadres</label><input id="client_address" name="client_address"></div>
+        <div class="field"><label class="lbl" for="customer_id">Klant</label>
+          <select id="customer_id" name="customer_id" required>
+            <option value="" disabled {{ 'selected' if customers else '' }}>— kies een klant —</option>
+            {% for c in customers %}<option value="{{ c.id }}" data-kind="{{ c.kind }}" data-address="{{ c.address or '' }}">{{ c.name }} · {{ c.kind|upper }}</option>{% endfor %}
+            <option value="new" {{ '' if customers else 'selected' }}>+ Nieuwe klant…</option>
+          </select>
+          <span class="muted small" id="basis_hint">Een project hoort altijd bij een klant. B2C: offerte incl. btw · B2B: excl. btw.</span></div>
+        <fieldset class="new-customer" id="new_customer" {{ '' if not customers else 'hidden' }}>
+          <legend class="lbl">Nieuwe klant</legend>
+          <div class="field"><label class="lbl" for="new_name">Naam klant</label><input id="new_name" name="new_name" placeholder="bv. Fam. Peeters of Bouwbedrijf X bv"></div>
+          <div class="field kind-set">
+            {% for k, label in customer_kinds.items() %}<label><input type="radio" name="new_kind" value="{{ k }}" {{ 'checked' if loop.first else '' }}> {{ label }}</label>{% endfor %}
+          </div>
+          <div class="field"><label class="lbl" for="new_address">Adres</label><input id="new_address" name="new_address"></div>
+          <div class="field"><label class="lbl" for="new_language">Taal van de offerte</label><select id="new_language" name="new_language">{% for k, v in languages.items() %}<option value="{{ k }}" {{ 'selected' if k == org.language else '' }}>{{ v }}</option>{% endfor %}</select></div>
+          <div class="field b2b-only" hidden><label class="lbl" for="new_vat_number">Btw-nummer</label><input id="new_vat_number" name="new_vat_number" placeholder="BE0123456789"></div>
+          <div class="field"><label class="lbl" for="new_email">E-mail</label><input id="new_email" name="new_email" type="email"></div>
+          <span class="muted small">Meer gegevens vul je later aan onder <a href="/contacten/klanten">Contacten</a>.</span>
+        </fieldset>
+        <div class="field"><label class="lbl" for="client_address">Werfadres</label><input id="client_address" name="client_address" placeholder="leeg = adres van de klant"></div>
         <div class="field"><label class="lbl" for="work_type">Type werk (btw)</label>
           <select id="work_type" name="work_type">{% for k, v in work_types.items() %}<option value="{{ k }}">{{ v[0] }}</option>{% endfor %}</select></div>
-        <fieldset style="border:1px solid var(--line);border-radius:8px;padding:10px;margin:0 0 12px"><legend class="lbl">Scope</legend>
-          {% for s in scopes %}<label style="display:inline-flex;gap:6px;align-items:center;margin-right:14px"><input type="checkbox" name="scope" value="{{ s }}" {{ 'checked' if loop.index <= 2 else '' }}>{{ s }}</label>{% endfor %}
+        <fieldset class="scope-set"><legend class="lbl">Scope</legend>
+          {% for s in scopes %}<label><input type="checkbox" name="scope" value="{{ s }}" {{ 'checked' if loop.index <= 2 else '' }}>{{ s }}</label>{% endfor %}
         </fieldset>
         <div class="field"><label class="lbl" for="notes">Opmerkingen voor de AI</label><textarea id="notes" name="notes" placeholder="bv. Badkamer niet meenemen; plafonds 2,80 m"></textarea></div>
-        <button class="btn primary" type="submit">Project aanmaken</button>
+        <button class="btn primary block" type="submit">Project aanmaken</button>
       </form>
     </div>
-  </div>
+  </details>
 </div>
+
+{% if board %}
+<div class="board">
+  {% for key, title in phases %}
+  {% set cards = board|selectattr('phase', 'equalto', key)|list %}
+  {% set value = cards|selectattr('subtotal_excl')|map(attribute='subtotal_excl')|sum %}
+  <section class="lane lane-{{ key }}">
+    <header>
+      <strong>{{ title }}</strong><span class="count">{{ cards|length }}</span>
+      {% if value and key != 'afgesloten' %}<span class="lane-value" title="som excl. btw">{{ value|eur }} excl.</span>{% endif %}
+    </header>
+    {% for c in cards %}
+    <a class="pcard st-{{ c.status }}" href="/projects/{{ c.project.id }}">
+      <span class="pcard-top"><span class="st-pill st-{{ c.status }}">{{ c.status_label }}</span><span class="muted small">{{ 'vandaag' if c.days == 0 else (c.days ~ ' d') }}</span></span>
+      <strong>{{ c.project.name }}</strong>
+      <span class="muted small">{{ c.project.client_name or 'Geen klant' }}{% if c.customer %} · {{ c.customer.kind|upper }}{% endif %}{% if c.quote %} · {{ c.quote.number }}{% endif %}</span>
+      {% if c.amount %}<span class="pcard-amount">{{ c.amount|eur }} <span class="muted small">{{ 'incl.' if c.incl_vat else 'excl.' }} btw</span></span>{% endif %}
+    </a>
+    {% else %}
+    <p class="lane-empty">Geen projecten</p>
+    {% endfor %}
+  </section>
+  {% endfor %}
+</div>
+{% else %}
+<div class="card"><div class="empty"><strong>Nog geen projecten</strong><span>Maak je eerste project aan met de knop rechtsboven.</span></div></div>
+{% endif %}
+<script>
+  const sel = document.getElementById("customer_id");
+  const box = document.getElementById("new_customer");
+  const workType = document.getElementById("work_type");
+  const defaults = {{ default_work_type|tojson }};
+  let workTypeTouched = false;
+  workType.addEventListener("change", () => { workTypeTouched = true; });
+  function chosenKind() {
+    if (sel.value === "new") return (box.querySelector("input[name=new_kind]:checked") || {}).value || "b2c";
+    return sel.selectedOptions[0]?.dataset.kind || "b2c";
+  }
+  function sync() {
+    const isNew = sel.value === "new";
+    box.hidden = !isNew;
+    document.getElementById("new_name").required = isNew;
+    const kind = chosenKind();
+    box.querySelector(".b2b-only").hidden = kind !== "b2b";
+    document.getElementById("client_address").placeholder = (!isNew && sel.selectedOptions[0]?.dataset.address) || "leeg = adres van de klant";
+    document.getElementById("basis_hint").textContent = sel.value
+      ? (kind === "b2b" ? "B2B-klant: de offerte toont prijzen excl. btw (btw onderaan erbij)." : "B2C-klant: de offerte toont prijzen incl. btw.")
+      : "Een project hoort altijd bij een klant. B2C: offerte incl. btw · B2B: excl. btw.";
+    if (!workTypeTouched && sel.value) workType.value = defaults[kind];
+  }
+  sel.addEventListener("change", sync);
+  box.addEventListener("change", sync);
+  sync();
+  {% if open_form %}document.querySelector("details.new-project").open = true;{% endif %}
+</script>
 {% endblock %}

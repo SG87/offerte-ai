@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+{% block title %}Factuur {{ inv.number or 'concept' }} · Offerte-AI{% endblock %}
+{% block watch %}kind:factuur{% endblock %}
+{% block content %}
+<div class="actions" style="margin-bottom:12px">
+  <a href="/facturen">← Facturen</a>
+  <strong style="font-size:17px">Factuur {{ inv.number or '(concept, nog geen nummer)' }} · {{ inv.client_name or '[KLANT]' }}</strong>
+  <span class="inv-st inv-{{ inv.status }}">{{ statuses[inv.status] }}</span>
+  <span class="tag">{{ 'B2B · excl. btw · Peppol' if inv.b2b else 'B2C · incl. btw · PDF' }}</span>
+  <span class="tag" title="Taal van de klant">{{ inv.language|upper }} · {{ language_name }}</span>
+  {% if project %}<a class="small" href="/projects/{{ project.id }}">project {{ project.name }}</a>{% endif %}
+</div>
+<div class="row">
+  <div class="col wide">
+    {% if ai_job %}<div class="ai-working" style="max-width:760px"><span class="ring" aria-hidden="true"></span><div><strong>Claude past de factuur aan</strong><span class="muted small">{{ ai_job.title }} — deze pagina werkt zichzelf bij.</span></div></div>{% endif %}
+    <div class="card" style="max-width:760px" lang="{{ inv.language }}">
+      <div class="row" style="justify-content:space-between">
+        <div><strong>{{ org.company_name or '[JOUW BEDRIJF]' }}</strong><br><span class="muted" style="font-size:13px">{{ org.address or '[adres]' }} · {{ org.vat_number or '[btw-nr]' }}{% if org.iban %} · IBAN {{ org.iban }}{% endif %}</span></div>
+        <div style="text-align:right;font-size:13px"><strong style="font-size:18px">{{ t('factuur') }}</strong><br>{{ t('nr') }} {{ inv.number or '—' }}
+          {% if inv.invoice_date %}<br>{{ t('factuurdatum') }} {{ inv.invoice_date.strftime('%d-%m-%Y') }}{% endif %}
+          {% if due %}<br>{{ t('vervaldatum') }} {{ due.strftime('%d-%m-%Y') }}{% endif %}</div>
+      </div>
+      <p style="margin:16px 0 4px"><span class="lbl">{{ t('klant') }}</span><strong>{{ inv.client_name or '[KLANT]' }}</strong><br><span class="muted">{{ inv.client_address or '' }}{% if inv.client_vat %}<br>{{ t('btw_nr') }} {{ inv.client_vat }}{% endif %}</span></p>
+      {% if inv.status == 'concept' %}<p class="notice warn small" style="margin:8px 0">{{ t('concept') }}</p>{% endif %}
+      {% if inv.title %}<h2 style="margin-top:12px">{{ inv.title }}</h2>{% endif %}
+      <table>
+        <thead><tr><th>{{ t('omschrijving') }}</th><th class="num">{{ t('hoev') }}</th><th class="num">{{ t('eenh') }}</th><th class="num">{{ t('totaal') }} {{ t('excl_btw' if inv.b2b else 'incl_btw') }}</th></tr></thead>
+        <tbody>
+        {% for ln in lines %}
+        <tr><td>{{ ln.description }}</td><td class="num">{{ ln.qty|qty }}</td><td class="num">{{ ln.unit }}</td><td class="num">{{ (ln.amount if inv.b2b else ln.shown)|eur }}</td></tr>
+        {% endfor %}
+        </tbody>
+        <tfoot>
+          {% if inv.b2b %}
+          <tr class="muted"><td colspan="3" class="num">{{ t('totaal_excl') }}</td><td class="num">{{ tot.subtotal|eur }}</td></tr>
+          {% for g in tot.rates %}<tr class="muted"><td colspan="3" class="num">{{ t('btw_pct', pct=g.pct|qty) }}</td><td class="num">{{ g.vat|eur }}</td></tr>{% endfor %}
+          <tr style="font-weight:600"><td colspan="3" class="num">{{ t('totaal_incl') }}</td><td class="num">{{ tot.total|eur }}</td></tr>
+          {% else %}
+          <tr style="font-weight:600"><td colspan="3" class="num">{{ t('totaal_incl') }}</td><td class="num">{{ tot.total|eur }}</td></tr>
+          {% for g in tot.rates %}<tr class="muted"><td colspan="3" class="num">{{ t('waarvan_btw', pct=g.pct|qty) }}</td><td class="num">{{ g.vat|eur }}</td></tr>{% endfor %}
+          <tr class="muted"><td colspan="3" class="num">{{ t('totaal_excl') }}</td><td class="num">{{ tot.subtotal|eur }}</td></tr>
+          {% endif %}
+        </tfoot>
+      </table>
+      {% if inv.structured_ref and due %}<p style="font-size:14px;margin-top:12px">{{ t('betaling' if org.iban else 'betaling_zonder_iban', amount=tot.total|eur, due=due.strftime('%d/%m/%Y'), iban=org.iban or '', ref=inv.structured_ref) }}</p>{% endif %}
+      {% if inv.paid_on %}<p><strong>{{ t('betaald', date=inv.paid_on.strftime('%d/%m/%Y')) }}</strong></p>{% endif %}
+      {% if inv.notes %}<p class="muted" style="font-size:13px"><strong>{{ t('opmerkingen') }}:</strong> {{ inv.notes }}</p>{% endif %}
+    </div>
+
+    {% if inv.status == 'concept' %}
+    <section class="card" style="max-width:960px">
+      <div class="card-head"><div class="card-title"><h2>Factuur aanpassen</h2></div><span class="muted small">Prijzen per eenheid excl. btw; de app rekent de bedragen.</span></div>
+      <form method="post" action="/facturen/{{ inv.id }}">
+        <fieldset {{ 'disabled' if ai_job else '' }}>
+        <div class="grid" style="grid-template-columns:2fr 1fr 1fr;gap:10px">
+          <div class="field"><label class="lbl" for="title">Titel</label><input id="title" name="title" value="{{ inv.title or '' }}"></div>
+          <div class="field"><label class="lbl" for="client_name">Klant</label><input id="client_name" name="client_name" value="{{ inv.client_name or '' }}"></div>
+          <div class="field"><label class="lbl" for="client_vat">Btw-nummer klant</label><input id="client_vat" name="client_vat" value="{{ inv.client_vat or '' }}"></div>
+        </div>
+        <div class="field"><label class="lbl" for="client_address">Adres klant</label><input id="client_address" name="client_address" value="{{ inv.client_address or '' }}"></div>
+        <div class="scroll table-wrap">
+        <table class="zones inv-lines">
+          <thead><tr><th>Omschrijving</th><th class="num">Hoev.</th><th>Eenh.</th><th class="num">Prijs/eenh. excl.</th><th class="num">Btw %</th><th class="num">Bedrag excl.</th><th class="c"><span class="sr-only">Verwijderen</span></th></tr></thead>
+          <tbody>
+          {% for ln in tot.lines + [none, none] %}{% set i = loop.index0 %}
+          <tr class="{{ 'new' if not ln else '' }}">
+            <td><input class="sm" name="line_{{ i }}_description" value="{{ ln.description if ln else '' }}" placeholder="{{ '+ nieuwe regel' if not ln else '' }}" style="min-width:280px"></td>
+            <td><input class="sm num" name="line_{{ i }}_qty" value="{{ ln.qty if ln else '' }}" style="width:70px"></td>
+            <td><input class="sm" name="line_{{ i }}_unit" value="{{ ln.unit if ln else '' }}" style="width:60px"></td>
+            <td><input class="sm num" name="line_{{ i }}_unit_price" value="{{ ln.unit_price|round(6) if ln else '' }}" style="width:100px"></td>
+            <td><input class="sm num" name="line_{{ i }}_vat_pct" value="{{ ln.vat_pct|qty if ln else (tot.lines[0].vat_pct|qty if tot.lines else '21') }}" style="width:56px"></td>
+            <td class="num calc">{{ ln.amount|eur if ln else '' }}</td>
+            <td class="c">{% if ln %}<label class="small" title="Regel verwijderen"><input type="checkbox" name="line_{{ i }}_delete"> weg</label>{% endif %}</td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        </div>
+        <div class="grid" style="grid-template-columns:1fr 3fr;gap:10px;margin-top:10px">
+          <div class="field"><label class="lbl" for="due_days">Betaaltermijn (dagen)</label><input id="due_days" name="due_days" type="number" min="0" value="{{ inv.due_days }}"></div>
+          <div class="field"><label class="lbl" for="notes">Opmerkingen op de factuur</label><input id="notes" name="notes" value="{{ inv.notes or '' }}"></div>
+        </div>
+        <div class="actions"><button class="btn primary" type="submit">Bewaar factuur</button></div>
+        </fieldset>
+      </form>
+    </section>
+    {% endif %}
+  </div>
+
+  <div class="col">
+    <div class="card">
+      <span class="lbl">Volgende stap</span>
+      {% if inv.status == 'concept' %}
+      <p class="small" style="margin:0 0 10px">Controleer de factuur en keur ze goed. Pas dan krijgt ze een nummer, factuurdatum en gestructureerde mededeling.</p>
+      <form method="post" action="/facturen/{{ inv.id }}/goedkeuren"><button class="btn primary block" type="submit" {{ 'disabled' if ai_job else '' }}>Factuur goedkeuren</button></form>
+      {% elif inv.status == 'goedgekeurd' %}
+        {% if inv.b2b %}
+        {% if peppol_missing %}<p class="notice warn small" style="margin:0 0 10px">Nog nodig voor Peppol: {{ peppol_missing|join(', ') }}.</p>{% endif %}
+        <form method="post" action="/facturen/{{ inv.id }}/peppol"><button class="btn primary block" type="submit" {{ 'disabled' if peppol_missing else '' }}>Verstuur via Peppol</button></form>
+        {% if not peppol_ready %}<p class="muted small" style="margin:8px 0 0">Nog geen Peppol-koppeling (OFFERTE_PEPPOL_API_URL): je krijgt het UBL-bestand om op te laden bij je access point.</p>{% endif %}
+        {% if inv.peppol_status == 'klaar' %}<p class="notice small" style="margin:8px 0 0">Klaar voor Peppol. <a href="/facturen/{{ inv.id }}/ubl.xml">Download UBL</a> en markeer als verstuurd zodra ze vertrokken is.</p>{% endif %}
+        {% if inv.peppol_status == 'mislukt' %}<p class="notice warn small" style="margin:8px 0 0">Peppol mislukt: {{ inv.peppol_error }}</p>{% endif %}
+        {% else %}
+        <a class="btn primary block" href="/facturen/{{ inv.id }}/factuur.pdf" target="_blank">Toon factuur (PDF)</a>
+        <p class="muted small" style="margin:8px 0 0">Mail de factuur hieronder, of geef ze zelf af en markeer ze als verstuurd.</p>
+        {% endif %}
+        <form method="post" action="/facturen/{{ inv.id }}/verstuurd" style="margin-top:10px"><button class="btn block" type="submit">Zelf verstuurd? Markeer als verstuurd</button></form>
+        <form method="post" action="/facturen/{{ inv.id }}/concept" style="margin-top:6px"><button class="btn sm ghost" type="submit">↶ Terug naar concept (aanpassen)</button></form>
+      {% elif inv.status == 'verzonden' %}
+      <p class="small" style="margin:0 0 10px">Verstuurd {{ {'peppol': 'via Peppol', 'email': 'per e-mail', 'manueel': 'door jezelf'}.get(inv.sent_via, '') }}{% if inv.sent_at %} op {{ inv.sent_at.strftime('%d/%m/%Y') }}{% endif %}{% if inv.peppol_ref and inv.sent_via == 'peppol' %} · ref. {{ inv.peppol_ref }}{% endif %}.</p>
+      {% else %}
+      <p class="small" style="margin:0">Betaald op {{ inv.paid_on.strftime('%d/%m/%Y') }}.</p>
+      {% endif %}
+      {% if inv.status in ['goedgekeurd', 'verzonden'] %}
+      <form method="post" action="/facturen/{{ inv.id }}/betaald" class="paid-form">
+        <label class="on-date"><span class="lbl">Betaald op</span><input type="date" name="on" value="{{ today.isoformat() }}" max="{{ today.isoformat() }}" required></label>
+        <button class="btn" type="submit">Markeer als betaald</button>
+      </form>
+      {% endif %}
+    </div>
+
+    {% if inv.status == 'concept' %}
+    <div class="card">
+      <span class="lbl">Aanpassen met AI</span>
+      <form method="post" action="/facturen/{{ inv.id }}/ai">
+        <textarea name="instruction" rows="3" required placeholder="bv. 'korting 5 % op het lakwerk' of 'voeg 2 uur extra werk toe aan 45 euro'" {{ 'disabled' if ai_job else '' }}></textarea>
+        <button class="btn block" type="submit" style="margin-top:8px" {{ 'disabled' if ai_job else '' }}>Laat AI aanpassen</button>
+      </form>
+      <p class="muted small" style="margin:8px 0 0">De AI past de regels aan; bedragen en btw rekent de app. Je ziet het resultaat hier en keurt daarna zelf goed.</p>
+    </div>
+    {% endif %}
+
+    {% if inv.status in ['goedgekeurd', 'verzonden'] %}
+    <div class="card" id="mailen">
+      <span class="lbl">E-mail naar de klant</span>
+      {% if not smtp_ready %}<p class="notice small" style="margin:0 0 10px">Nog geen mailserver: de mail wordt klaargezet in de outbox.</p>{% endif %}
+      <form method="post" action="/facturen/{{ inv.id }}/mail" class="stack">
+        <div class="field"><label class="lbl" for="mail-to">Aan</label><input id="mail-to" name="to" type="email" required value="{{ mail_defaults.to }}"></div>
+        <div class="field"><label class="lbl" for="mail-subject">Onderwerp</label><input id="mail-subject" name="subject" required value="{{ mail_defaults.subject }}"></div>
+        <div class="field"><label class="lbl" for="mail-body">Bericht</label><textarea id="mail-body" name="body" rows="8" required>{{ mail_defaults.body }}</textarea></div>
+        <p class="muted small" style="margin:0">Bijlage: factuur-{{ inv.number }}.pdf</p>
+        <button class="btn" type="submit">{{ 'Verstuur factuur' if smtp_ready else 'Zet klaar in outbox' }}</button>
+      </form>
+      {% for m in mails %}<p class="small muted" style="margin:6px 0 0">{{ m.created_at.strftime('%d/%m %H:%M') }} · {{ m.to }} · {{ m.status }}{% if m.error %} — {{ m.error }}{% endif %}</p>{% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="card">
+      <span class="lbl">Bestanden</span>
+      <div class="actions" style="flex-direction:column;align-items:stretch">
+        <a class="btn" href="/facturen/{{ inv.id }}/factuur.pdf" target="_blank">Factuur (PDF){{ ' — concept' if inv.status == 'concept' else '' }}</a>
+        {% if inv.b2b and inv.status != 'concept' %}<a class="btn" href="/facturen/{{ inv.id }}/ubl.xml">Peppol UBL (XML)</a>{% endif %}
+      </div>
+      {% if inv.status == 'concept' and not inv.number %}
+      <details class="refuse" style="margin-top:10px">
+        <summary class="btn sm ghost danger">Concept verwijderen…</summary>
+        <form method="post" action="/facturen/{{ inv.id }}/verwijder" class="refuse-form"><button class="btn sm danger-solid" type="submit">Ja, verwijder dit concept</button></form>
+      </details>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

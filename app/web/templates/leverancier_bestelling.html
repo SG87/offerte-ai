@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<title>Bestelling {{ order.number }} · {{ company.company_name or company.email }}</title>
+<link rel="stylesheet" href="/static/app.css?v={{ asset_v('app.css') }}">
+{% if theme %}<style>:root{ {% for k, v in theme.items() %}{{ k }}:{{ v }};{% endfor %} }</style>{% endif %}
+<style>
+  .lev{max-width:900px;margin:0 auto;padding:24px 16px}
+  .lev-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px}
+  .lev-head img{max-height:52px;max-width:220px}
+  .lines{width:100%;border-collapse:collapse}
+  .lines th{text-align:left;font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;padding:6px 8px;border-bottom:1px solid var(--line)}
+  .lines td{padding:10px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+  .lines select,.lines input{width:100%}
+  .lines .qty{white-space:nowrap;text-align:right}
+  .result{border-left:4px solid var(--accent);padding:12px 16px;background:var(--accent-bg,#f4f7f5);border-radius:8px;margin-bottom:16px}
+  @media (max-width:640px){
+    .lines thead{display:none}
+    .lines tr{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:10px 0;border-bottom:1px solid var(--line)}
+    .lines td{border:0;padding:0}
+    .lines td.what{grid-column:1/-1}
+    .lines td.note{grid-column:1/-1}
+    .lines .qty{text-align:left}
+  }
+</style>
+</head>
+<body>
+<div class="lev">
+  <div class="lev-head">
+    {% if company.logo_file %}<img src="/l/{{ order.public_token }}/logo" alt="{{ company.company_name or '' }}">{% else %}<strong style="font-size:20px">{{ company.company_name or company.email }}</strong>{% endif %}
+  </div>
+
+  <section class="card">
+    <span class="lbl">Bestelling van {{ company.company_name or company.email }}</span>
+    <h1 style="margin:2px 0 0;font-size:22px">Bestelling {{ order.number }}</h1>
+    <p class="muted small" style="margin:4px 0 0">
+      {% if supplier %}Aan {{ supplier.name }}{% if supplier.customer_number %} · klantnummer {{ supplier.customer_number }}{% endif %} · {% endif %}besteld {{ (order.confirmed_at or order.created_at).strftime('%d/%m/%Y') }}<br>
+      Leveradres: {{ company.address or '—' }}{% if company.phone %} · {{ company.phone }}{% endif %}
+    </p>
+  </section>
+
+  {% if saved %}<div class="result">Bedankt! Uw bevestiging is doorgestuurd naar {{ company.company_name or company.email }}. U kan ze hieronder nog aanpassen zolang de levering niet binnen is.</div>
+  {% elif order.supplier_updated_at and editable %}<div class="result">Bevestigd op {{ order.supplier_updated_at.strftime('%d/%m/%Y') }}{% if order.supplier_contact %} door {{ order.supplier_contact }}{% endif %}. Wijzigt er iets? Pas het hieronder aan.</div>{% endif %}
+  {% if not editable %}<div class="notice warn">Deze bestelling is {{ order.status }}; aanpassen kan niet meer.</div>{% endif %}
+
+  <section class="card">
+    <h2 style="margin-top:0">Ontvangst en levering bevestigen</h2>
+    <p class="muted small" style="margin-top:0">Geef per lijn aan of u kan leveren en wanneer.</p>
+    {% if error %}<p class="notice warn small">{{ error }}</p>{% endif %}
+    <form method="post" action="/l/{{ order.public_token }}">
+      <table class="lines">
+        <thead><tr><th>Product</th><th class="qty">Aantal</th><th>Levering</th><th>Verwacht op</th><th>Opmerking</th></tr></thead>
+        <tbody>
+        {% for r in rows %}
+        {% set ln = r.line %}
+        <tr>
+          <td class="what"><strong>{{ ln.label }}</strong>{% if ln.code %}<br><span class="muted small">{{ ln.code }}</span>{% endif %}</td>
+          <td class="qty">{{ ln.qty|qty }} {{ ln.unit or '' }}</td>
+          <td><label class="sr-only" for="status_{{ ln.id }}">Levering {{ ln.label }}</label>
+            <select id="status_{{ ln.id }}" name="status_{{ ln.id }}" {{ '' if editable else 'disabled' }}>
+              {% for k, v in statuses.items() %}<option value="{{ k }}" {{ 'selected' if r.status == k else '' }}>{{ v }}</option>{% endfor %}
+            </select></td>
+          <td><label class="sr-only" for="datum_{{ ln.id }}">Leverdatum {{ ln.label }}</label><input id="datum_{{ ln.id }}" type="date" name="datum_{{ ln.id }}" value="{{ r.date }}" {{ '' if editable else 'disabled' }}></td>
+          <td class="note"><label class="sr-only" for="opmerking_{{ ln.id }}">Opmerking {{ ln.label }}</label><input id="opmerking_{{ ln.id }}" name="opmerking_{{ ln.id }}" value="{{ r.note }}" placeholder="bv. alternatief product" {{ '' if editable else 'disabled' }}></td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      <div class="grid two" style="margin-top:16px">
+        <div class="field"><label class="lbl" for="naam">Uw naam</label><input id="naam" name="naam" autocomplete="name" value="{{ contact }}" {{ '' if editable else 'disabled' }}></div>
+        <div class="field"><label class="lbl" for="opmerking">Opmerking voor {{ company.company_name or 'de klant' }} (optioneel)</label><input id="opmerking" name="opmerking" value="{{ note }}" {{ '' if editable else 'disabled' }}></div>
+      </div>
+      {% if editable %}<button class="btn primary" type="submit">{{ 'Bevestiging bijwerken' if order.supplier_updated_at else 'Bevestig ontvangst en levering' }}</button>{% endif %}
+    </form>
+  </section>
+
+  <p class="muted small" style="text-align:center">Vragen? Contacteer {{ company.company_name or company.email }}: <a href="mailto:{{ company.email }}">{{ company.email }}</a>{% if company.phone %} · {{ company.phone }}{% endif %}<br>Verstuurd met Offer AI namens {{ company.company_name or company.email }}.</p>
+</div>
+<script>
+  // a line that can't be delivered needs no date
+  document.querySelectorAll('select[name^="status_"]').forEach(function (sel) {
+    var date = document.querySelector('input[name="datum_' + sel.name.slice(7) + '"]');
+    function sync() { date.disabled = sel.disabled || sel.value === 'niet_leverbaar'; }
+    sel.addEventListener('change', sync); sync();
+  });
+</script>
+</body>
+</html>

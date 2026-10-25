@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+{% block title %}Account · Offerte-AI{% endblock %}
+{% block watch %}kind:bedrijf{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Account</h1>
+    <p class="lead" style="margin:0">Instellingen van {{ org.company_name or org.email }}. Prijzen en rekenregels staan onder <a href="/config">Configuratie</a>, mensen onder <a href="/contacten">Contacten</a>.</p>
+  </div>
+</div>
+
+<div class="settings-layout">
+  <nav class="settings-nav" aria-label="Secties">
+    <a href="#gegevens">Bedrijfsgegevens</a>
+    <a href="#opzoeken">Opnieuw opzoeken met AI</a>
+    <a href="#huisstijl">Huisstijl</a>
+    <a href="#sector">Sector</a>
+    <a href="#api">API &amp; MCP</a>
+    <a href="#integraties">Integraties</a>
+  </nav>
+
+  <div class="settings-main">
+    <section class="card" id="gegevens">
+      <h2>Bedrijfsgegevens</h2>
+      <p class="muted small">Deze gegevens staan op je offertes en in de bestelmails naar leveranciers.</p>
+      <form method="post" action="/account/gegevens">
+        <div class="grid two">
+          <div class="field"><label class="lbl" for="company_name">Bedrijfsnaam</label><input id="company_name" name="company_name" value="{{ org.company_name or '' }}"></div>
+          <div class="field"><label class="lbl" for="vat_number">Btw-nummer</label><input id="vat_number" name="vat_number" value="{{ org.vat_number or '' }}" placeholder="BE0123456789"></div>
+          <div class="field span2"><label class="lbl" for="address">Adres</label><input id="address" name="address" value="{{ org.address or '' }}"></div>
+          <div class="field"><label class="lbl" for="phone">Telefoon</label><input id="phone" name="phone" value="{{ org.phone or '' }}"></div>
+          <div class="field"><label class="lbl" for="iban">IBAN (op facturen)</label><input id="iban" name="iban" value="{{ org.iban or '' }}" placeholder="BE68 5390 0754 7034"></div>
+          <div class="field"><label class="lbl" for="bic">BIC</label><input id="bic" name="bic" value="{{ org.bic or '' }}" placeholder="bv. GEBABEBB"></div>
+          <div class="field"><label class="lbl" for="website">Website</label><input id="website" name="website" type="url" value="{{ org.website or '' }}" placeholder="https://"></div>
+          <div class="field"><label class="lbl" for="email">E-mailadres (login)</label><input id="email" name="email" type="email" required value="{{ org.email }}"></div>
+          <div class="field"><label class="lbl" for="purchase_contact_email">Contactpersoon aankoop</label><input id="purchase_contact_email" name="purchase_contact_email" type="email" value="{{ org.purchase_contact_email or '' }}" placeholder="leeg = verantwoordelijke voorraad of {{ org.email }}"></div>
+          <div class="field"><label class="lbl" for="language">Taal</label><select id="language" name="language">{% for k, v in languages.items() %}<option value="{{ k }}" {{ 'selected' if k == org.language else '' }}>{{ v }}</option>{% endfor %}</select></div>
+          <div class="field"><label class="lbl" for="country">Land</label><select id="country" name="country">{% for k, v in countries.items() %}<option value="{{ k }}" {{ 'selected' if k == org.country else '' }}>{{ v }}</option>{% endfor %}</select></div>
+        </div>
+        <button class="btn primary" type="submit">Bewaar gegevens</button>
+      </form>
+    </section>
+
+    <section class="card{{ ' is-working' if lookup_job else '' }}" id="opzoeken">
+      <div class="card-head">
+        <div class="card-title"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.8 4.7L18.5 9.5 13.8 11.3 12 16l-1.8-4.7L5.5 9.5l4.7-1.8z" fill="currentColor"/></svg></span><h2>Opnieuw opzoeken met AI</h2></div>
+      </div>
+      {% if lookup_job %}
+      <div class="ai-working"><span class="ring" aria-hidden="true"></span><div><strong>{{ lookup_job.title }}</strong><span class="muted small">Je kan verder werken; deze pagina ververst vanzelf als het klaar is.</span></div></div>
+      {% else %}
+      <p class="small" style="margin-top:0">Claude bekijkt je website ({{ org.website or org.email.split('@')[-1] }}) en zoekt ontbrekende gegevens op: adres, btw-nummer, telefoon, logo en huisstijlkleuren.</p>
+      <form method="post" action="/account/opzoeken" class="actions">
+        <label class="small" style="display:inline-flex;gap:8px;align-items:center"><input type="checkbox" name="overwrite"> Ook bestaande gegevens en logo overschrijven</label>
+        <button class="btn" type="submit" {{ '' if ai_enabled else 'title="Zonder API-key werkt enkel de eenvoudige herkenning"' }}>Zoek opnieuw op</button>
+      </form>
+      {% endif %}
+    </section>
+
+    <section class="card" id="huisstijl">
+      <h2>Huisstijl</h2>
+      <form method="post" action="/account/huisstijl" enctype="multipart/form-data">
+        <div class="brandbox">
+          {% if org.logo_file %}<img class="logo-preview" id="logo-preview" src="/branding/logo?v={{ org.logo_file }}" alt="Huidig logo">
+          {% else %}<img class="logo-preview" id="logo-preview" alt="Logo" hidden><span class="no-logo" id="no-logo">geen logo</span>{% endif %}
+          <div class="field" style="flex:1 1 240px;margin:0">
+            <label class="lbl" for="logo">Ander logo uploaden</label><input id="logo" name="logo" type="file" accept="image/svg+xml,image/png,image/jpeg,image/webp">
+            {% if org.logo_file %}<label class="small" style="display:inline-flex;gap:8px;align-items:center;margin-top:8px"><input type="checkbox" name="remove_logo"> Logo verwijderen</label>{% endif %}
+          </div>
+        </div>
+        <div class="colors">
+          <div class="field"><label class="lbl" for="brand_primary">Hoofdkleur</label><input id="brand_primary" name="brand_primary" type="color" value="{{ org.brand_primary or '#1f5fbf' }}"></div>
+          <div class="field"><label class="lbl" for="brand_secondary">Tweede kleur</label><input id="brand_secondary" name="brand_secondary" type="color" value="{{ org.brand_secondary or '#5f5f5f' }}"></div>
+        </div>
+        <div class="actions"><button class="btn primary" type="submit">Bewaar huisstijl</button></div>
+      </form>
+    </section>
+
+    <section class="card" id="sector">
+      <h2>Sector</h2>
+      <p class="muted small">De sector bepaalt de basis-skill (posten, rekenregels) en de standaardprijslijst.</p>
+      <form method="post" action="/account/sector" class="actions">
+        <select name="sector" style="width:auto;min-width:240px">{% for s in sectors %}<option value="{{ s.sector }}" {{ 'selected' if s.sector == org.sector else '' }}>{{ s.label }}</option>{% endfor %}</select>
+        <button class="btn" type="submit">Wijzig sector</button>
+      </form>
+      <p class="small" style="margin:10px 0 0;color:var(--warn)">Bij een andere sector maken we een nieuwe prijslijstversie met de standaardprijzen van die sector. Bestaande offertes blijven ongewijzigd.</p>
+    </section>
+
+    <section class="card" id="api">
+      <h2>API &amp; MCP</h2>
+      <p class="small" style="margin-top:0">Voor integraties en agents: header <code>X-API-Key</code> op <code>{{ base_url }}/api/v1</code> (<a href="/docs">documentatie</a>).</p>
+      <div class="field"><span class="lbl">API-sleutel</span>
+        <div class="secret"><input id="api-key" type="password" value="{{ org.api_key }}" readonly aria-label="API-sleutel"><button class="btn sm" type="button" id="api-show">Toon</button><button class="btn sm" type="button" id="api-copy">Kopieer</button></div>
+      </div>
+      <form method="post" action="/account/api-key" class="actions">
+        <label class="small" style="display:inline-flex;gap:8px;align-items:center"><input type="checkbox" name="confirm"> De oude sleutel mag vervallen</label>
+        <button class="btn sm ghost danger" type="submit">Nieuwe sleutel aanmaken</button>
+      </form>
+      <p class="small muted" style="margin:12px 0 0">MCP: lokaal met <code>python -m app.mcp_server</code> (stdio) of via <code>{{ base_url }}/mcp</code> (streamable HTTP). Zie README.</p>
+    </section>
+
+    <section class="card" id="integraties">
+      <h2>Integraties</h2>
+      <p class="muted small">Deze stel je in op de server (bestand <code>.env</code>); hier zie je of ze actief zijn.</p>
+      <ul class="integrations">
+        {% for name, on, detail in integrations %}
+        <li><span class="dot {{ 'on' if on else 'off' }}" aria-hidden="true"></span><div><strong>{{ name }}</strong><span class="muted small">{{ 'actief' if on else 'niet ingesteld' }} · {{ detail }}</span></div></li>
+        {% endfor %}
+      </ul>
+      <form method="post" action="/account/testmail" class="actions" style="margin-top:12px">
+        <button class="btn sm" type="submit">Stuur testmail naar {{ org.email }}</button>
+      </form>
+    </section>
+  </div>
+</div>
+<script>
+(() => {
+  const key = document.getElementById("api-key");
+  document.getElementById("api-show").onclick = (e) => {
+    const hidden = key.type === "password";
+    key.type = hidden ? "text" : "password";
+    e.target.textContent = hidden ? "Verberg" : "Toon";
+  };
+  document.getElementById("api-copy").onclick = async (e) => {
+    try { await navigator.clipboard.writeText(key.value); e.target.textContent = "Gekopieerd"; }
+    catch (_) { key.type = "text"; key.select(); }
+    setTimeout(() => (e.target.textContent = "Kopieer"), 1500);
+  };
+  document.getElementById("brand_primary").addEventListener("input", (e) => {
+    document.documentElement.style.setProperty("--brand", e.target.value);
+    document.documentElement.style.setProperty("--accent", e.target.value);
+  });
+  document.getElementById("logo").addEventListener("change", (e) => {
+    const f = e.target.files[0], img = document.getElementById("logo-preview");
+    if (!f) return;
+    img.src = URL.createObjectURL(f); img.hidden = false;
+    document.getElementById("no-logo")?.remove();
+  });
+  // highlight the section in view
+  const links = [...document.querySelectorAll(".settings-nav a")];
+  const io = new IntersectionObserver((entries) => entries.forEach((en) => {
+    if (en.isIntersecting) links.forEach((a) => a.classList.toggle("on", a.getAttribute("href") === "#" + en.target.id));
+  }), { rootMargin: "-40% 0px -55% 0px" });
+  document.querySelectorAll(".settings-main > section").forEach((s) => io.observe(s));
+})();
+</script>
+{% endblock %}

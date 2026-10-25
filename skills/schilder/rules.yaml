@@ -5,6 +5,12 @@ label: Schilder
 version: "1.0"
 zone_kinds: [ruimte]
 
+# Zone-tags: elk een kolom in de zonetabel. type bool = vinkje; choice = keuzelijst (options);
+# text = vrije ingave met suggesties. Een waarde wordt bewaard als "sleutel=waarde" en kan in een post
+# gebruikt worden als condition_tag (bv. condition_tag: "ondergrond=gyproc").
+tags:
+  - { key: vochtig, label: Vochtig, type: bool, hint: "Keuken, badkamer, wasplaats, toilet: vochtwerende muurverf" }
+
 params:
   layers_default: 2            # standaard aantal lagen
   opening_deduct_min_m2: 1.0   # openingen kleiner dan dit worden niet afgetrokken
@@ -73,9 +79,9 @@ default_prices:
   round_hours_to: 0.5
   items:
     - { code: voorbereiding, label: "Voorbereiding (plamuren, schuren, ontvetten)", unit: m2, material_price: 0.80, hours_per_unit: 0.10 }
-    - { code: muurverf, label: "Muurverf acryl mat", unit: m2, material_price: 9.50, material_unit: l, coverage: 8.0, hours_per_unit: 0.06, hours_scale_with_layers: true }
-    - { code: muurverf_vochtwerend, label: "Muurverf vochtwerend", unit: m2, material_price: 14.00, material_unit: l, coverage: 7.0, hours_per_unit: 0.07, hours_scale_with_layers: true }
-    - { code: plafondverf, label: "Plafondverf", unit: m2, material_price: 9.00, material_unit: l, coverage: 8.0, hours_per_unit: 0.08, hours_scale_with_layers: true }
+    - { code: muurverf, label: "Muurverf acryl mat", unit: m2, material_price: 9.50, material_unit: l, coverage: 8.0, hours_per_unit: 0.06, hours_scale_with_layers: true, stock: true }
+    - { code: muurverf_vochtwerend, label: "Muurverf vochtwerend", unit: m2, material_price: 14.00, material_unit: l, coverage: 7.0, hours_per_unit: 0.07, hours_scale_with_layers: true, stock: true }
+    - { code: plafondverf, label: "Plafondverf", unit: m2, material_price: 9.00, material_unit: l, coverage: 8.0, hours_per_unit: 0.08, hours_scale_with_layers: true, stock: true }
     - { code: lak_deuren, label: "Lakwerk binnendeur (2 zijden, incl. kader)", unit: stuk, material_price: 12.00, hours_per_unit: 1.50 }
     - { code: plinten, label: "Lakwerk plinten", unit: lm, material_price: 0.60, hours_per_unit: 0.15 }
     - { code: afdekken, label: "Afdekken, opkuis en afvoer", unit: ruimte, material_price: 8.00, hours_per_unit: 0.75 }

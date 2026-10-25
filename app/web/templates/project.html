@@ -1,119 +1,564 @@
 {% extends "base.html" %}
 {% block title %}{{ project.name }} · Offerte-AI{% endblock %}
+{% block watch %}project:{{ project.id }}{% endblock %}
 {% block content %}
-<div class="actions" style="margin-bottom:12px">
-  <a href="/projects">← Projecten</a>
-  <strong style="font-size:17px">{{ project.client_name or '[KLANT]' }} · {{ project.name }}</strong>
-  <span class="tag">scope: {{ project.scope|join(', ') }}</span>
-  <span class="tag">btw {{ project.vat_pct|qty }} %</span>
-  {% if geometry.scale_confirmed %}<span class="tag accent">schaal bevestigd</span>{% else %}<span class="tag warn">schaal niet bevestigd</span>{% endif %}
-  {% if result %}<span class="tag {{ 'warn' if result.indicative else 'accent' }}">offerte {{ quote.number }} v{{ quote.version }} · {{ 'indicatief' if result.indicative else 'definitief' }}</span>{% endif %}
+{% set running = analysis.status == 'running' %}
+{% set n_zones = geometry.zones|length %}
+{% set n_ass = geometry.assumptions|length %}
+{% set n_ok = geometry.assumptions|selectattr('confirmed')|list|length %}
+{% set has_plan = plan and plan.filename %}
+{% set steps = [
+  ('Plan', 'foto of PDF', has_plan or n_zones > 0),
+  ('Zones', (n_zones ~ ' zones') if n_zones else 'ruimtes en maten', n_zones > 0 and not running),
+  ('Controle', 'schaal en aannames', n_zones > 0 and geometry.scale_confirmed and n_ok == n_ass and not running),
+  ('Offerte', ('indicatief' if result.indicative else 'definitief') if result else 'meetstaat en prijs', result and not result.indicative),
+] %}
+{% set ns = namespace(current=none) %}
+{% for s in steps %}{% if ns.current is none and not s[2] %}{% set ns.current = loop.index0 %}{% endif %}{% endfor %}
+
+<div class="page-head">
+  <div>
+    <a class="crumb" href="/projects">← Projecten</a>
+    <h1>{{ project.name }}</h1>
+    <div class="meta">
+      {% if customer %}<span>{{ customer.name }}</span>
+      <span class="chip" title="{{ 'B2B: offerte excl. btw' if customer.is_b2b else 'B2C: offerte incl. btw' }}">{{ customer.kind|upper }} · prijzen {{ 'incl.' if incl_vat else 'excl.' }} btw</span>
+      <span class="chip" title="Taal van de offerte">{{ (customer.language or 'nl')|upper }}</span>
+      {% else %}<span class="pill warn">Geen klant gekoppeld</span>{% endif %}
+      {% if project.client_address %}<span class="muted">werf: {{ project.client_address }}</span>{% endif %}
+      <form class="cust-switch" method="post" action="/projects/{{ project.id }}/klant">
+        <select name="customer_id" required aria-label="Klant">
+          <option value="" disabled {{ '' if customer else 'selected' }}>{{ 'Andere klant…' if customer else 'Kies een klant…' }}</option>
+          {% for c in customers %}<option value="{{ c.id }}" {{ 'selected' if customer and c.id == customer.id else '' }}>{{ c.name }} · {{ c.kind|upper }}</option>{% endfor %}
+        </select>
+        <button class="btn sm" type="submit">{{ 'Wijzig' if customer else 'Koppel' }}</button>
+        <a class="small" href="/contacten/klanten">nieuwe klant</a>
+      </form>
+      <span class="chip">scope: {{ project.scope|join(', ') or '—' }}</span>
+      <span class="chip">btw {{ project.vat_pct|qty }} %</span>
+    </div>
+  </div>
+  <div class="head-actions">
+    {% if invoice %}<a class="btn" href="/facturen/{{ invoice.id }}">Factuur {{ invoice.number or '(concept)' }} →</a>
+    {% elif quote and status in ['werk_afgerond', 'factuur_verstuurd', 'factuur_betaald', 'afgerond'] %}
+    <form method="post" action="/projects/{{ project.id }}/factuur"><button class="btn" type="submit">Maak factuur</button></form>
+    {% endif %}
+    {% if quote %}<a class="btn" href="/projects/{{ project.id }}/offerte">Offerte {{ quote.number }} v{{ quote.version }} bekijken →</a>{% endif %}
+    <details class="refuse delete-project">
+      <summary class="btn sm ghost danger">Verwijder project…</summary>
+      <form method="post" action="/projects/{{ project.id }}/verwijder" class="refuse-form pop-right">
+        <span class="small">Plan, offertes, historiek, planning en to-do's van dit project gaan definitief weg{% if reservations %}; het gereserveerde materiaal komt terug in de voorraad{% endif %}.</span>
+        <button class="btn sm danger-solid" type="submit">Ja, verwijder "{{ project.name }}"</button>
+      </form>
+    </details>
+  </div>
 </div>
+
+{% set nxt = wf.next_status(status) %}
+{% set prev = wf.previous_status(status) %}
+<section class="card status-card" id="status">
+  <div class="card-head">
+    <div class="card-title">
+      <span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h10M4 12h16M4 18h7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="18" cy="6" r="2.2" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="15" cy="18" r="2.2" fill="none" stroke="currentColor" stroke-width="1.8"/></svg></span>
+      <h2>Projectstatus</h2>
+      <span class="st-pill st-{{ status }}">{{ wf.label(status) }}</span>
+    </div>
+    <span class="muted small">
+      {% if project.work_started_on %}gestart {{ project.work_started_on.strftime('%d/%m/%Y') }}{% if project.work_done_on %} · afgerond {{ project.work_done_on.strftime('%d/%m/%Y') }}{% endif %}
+      {% elif project.status_changed_at %}sinds {{ project.status_changed_at.strftime('%d/%m/%Y') }}{% endif %}
+    </span>
+  </div>
+
+  {% if status == 'geweigerd' %}
+  <div class="notice warn"><strong>Offerte geweigerd.</strong> Dit project is afgesloten.</div>
+  {% else %}
+  {% set cur = wf.PIPELINE.index(status) if status in wf.PIPELINE else 0 %}
+  <ol class="pipeline">
+    {% for key in wf.PIPELINE %}
+    <li class="{{ 'done' if loop.index0 < cur else ('current' if loop.index0 == cur else '') }} ph-{{ wf.BY_KEY[key].phase }}" title="{{ wf.label(key) }}">
+      <span class="bar"></span><span class="name">{{ wf.label(key) }}</span>
+    </li>
+    {% endfor %}
+  </ol>
+  {% endif %}
+
+  {% if status not in ['afgerond', 'geweigerd'] %}
+  <div class="status-actions">
+    {% if nxt %}
+    <form method="post" action="/projects/{{ project.id }}/status" class="next-step">
+      <input type="hidden" name="to" value="{{ nxt }}">
+      {% if nxt in wf.DATED %}
+      <label class="on-date"><span class="lbl">{{ 'Gestart op' if nxt == 'in_uitvoering' else 'Afgerond op' }}</span>
+        <input type="date" name="on" required value="{{ today.isoformat() }}" max="{{ today.isoformat() }}"
+               {% if nxt == 'werk_afgerond' and project.work_started_on %}min="{{ project.work_started_on.isoformat() }}"{% endif %}
+               title="Vandaag of een dag in het verleden">
+      </label>
+      {% endif %}
+      <input name="note" placeholder="Notitie (optioneel){{ ', bv. akkoord per mail op 12/11' if nxt == 'aanvaard' else '' }}">
+      {% set needs_quote = nxt in wf.NEEDS_QUOTE and not quote %}
+      <button class="btn primary" type="submit" {{ 'disabled' if needs_quote or running else '' }}>{{ wf.BY_KEY[nxt].action }} →</button>
+    </form>
+    {% if nxt in wf.NEEDS_QUOTE and not quote %}<p class="muted small" style="margin:0">Bereken eerst de meetstaat en offerte hieronder.</p>{% endif %}
+    {% if nxt == 'aanvaard' %}<p class="muted small" style="margin:0">Bij aanvaarding controleren we de voorraad (aankooplijst naar {{ org.purchase_contact_email or org.email }} bij een tekort) en vragen we het werk in te plannen.</p>{% endif %}
+    {% endif %}
+    <div class="actions">
+      {% if prev %}
+      <form method="post" action="/projects/{{ project.id }}/status"><input type="hidden" name="to" value="{{ prev }}"><button class="btn sm ghost" type="submit">↶ Terug naar {{ wf.label(prev)|lower }}</button></form>
+      {% endif %}
+      {% if status in wf.REFUSABLE %}
+      <details class="refuse">
+        <summary class="btn sm ghost danger">Offerte geweigerd…</summary>
+        <form method="post" action="/projects/{{ project.id }}/status" class="refuse-form">
+          <input type="hidden" name="to" value="geweigerd">
+          <input name="note" placeholder="Reden (optioneel), bv. te duur">
+          <button class="btn sm danger-solid" type="submit">Bevestig: project afsluiten</button>
+        </form>
+      </details>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+</section>
+
+{% if status in ['voorbereid', 'gemaakt', 'gestuurd'] and not project.proposed_start and geometry.zones and not running %}
+<section class="card proposal" id="voorstel">
+  <div class="card-head">
+    <div class="card-title"><h2>Voorstel uitvoering</h2></div>
+    <form method="post" action="/projects/{{ project.id }}/voorstel"><button class="btn sm" type="submit" name="opnieuw" value="1">Stel uitvoering voor</button></form>
+  </div>
+  <p class="muted small" style="margin:0">Nog geen voorstel. Het komt er vanzelf wanneer de AI het plan leest; bij manueel ingevoerde zones vraag je het hier aan.</p>
+</section>
+{% elif status in ['voorbereid', 'gemaakt', 'gestuurd'] and project.proposed_start %}
+<section class="card proposal" id="voorstel">
+  <div class="card-head">
+    <div class="card-title">
+      <span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 3v4M8 3v4M4 9h16M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M9 15l2 2 4-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      <h2>Voorstel uitvoering</h2>
+      {% if project.proposal_locked %}<span class="tag">handmatig</span>{% else %}<span class="tag accent">AI-voorstel</span>{% endif %}
+    </div>
+    <form method="post" action="/projects/{{ project.id }}/voorstel"><button class="btn sm ghost" type="submit" name="opnieuw" value="1" title="Zoekt opnieuw de eerste vrije periode en de minst belaste werknemers">↻ Stel opnieuw voor</button></form>
+  </div>
+  <form method="post" action="/projects/{{ project.id }}/voorstel" class="proposal-form">
+    <div class="proposal-grid">
+      <div>
+        <span class="lbl">Wie</span>
+        <div class="people-pick">
+          {% for e in active_emps %}
+          <label class="pick"><input type="checkbox" name="crew" value="{{ e.id }}" {{ 'checked' if e.id in project.proposed_crew else '' }}><i class="swatch" style="background:{{ color_of(e) }}"></i>{{ e.name }} <small class="muted">{{ e.role }}</small></label>
+          {% else %}<a class="small" href="/contacten/werknemers">Voeg werknemers toe om een ploeg voor te stellen →</a>{% endfor %}
+        </div>
+      </div>
+      <div>
+        <div class="grid" style="grid-template-columns:1fr 1fr">
+          <div><label class="lbl" for="proposed_start">Van</label><input id="proposed_start" name="proposed_start" type="date" value="{{ project.proposed_start or '' }}"></div>
+          <div><label class="lbl" for="proposed_end">Tot en met</label><input id="proposed_end" name="proposed_end" type="date" value="{{ project.proposed_end or '' }}"></div>
+        </div>
+        <div class="field" style="margin-top:12px"><label class="lbl" for="proposal_note">Toelichting (intern)</label><input id="proposal_note" name="proposal_note" value="{{ project.proposal_note or '' }}"></div>
+        {% if proposal_conflicts %}<div class="notice warn small">{% for c in proposal_conflicts %}{{ c }}{% if not loop.last %}<br>{% endif %}{% endfor %}</div>{% endif %}
+        {% if proposal_sentence %}<p class="small" style="margin:0 0 10px"><span class="lbl">Op de offerte</span>{{ proposal_sentence }}</p>{% endif %}
+        <div class="actions"><button class="btn primary" type="submit">Bewaar voorstel</button><span class="muted small">Bij aanvaarding wordt dit het planningsblok.</span></div>
+      </div>
+    </div>
+  </form>
+</section>
+{% endif %}
+
+{% if status in ['voorbereid', 'gemaakt'] %}
+<ol class="steps">
+  {% for s in steps %}
+  <li class="{{ 'done' if s[2] else ('current' if loop.index0 == ns.current else '') }}">
+    <span class="dot">{% if s[2] %}<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>{% else %}{{ loop.index }}{% endif %}</span>
+    <span class="txt"><strong>{{ s[0] }}</strong><small>{{ s[1] }}</small></span>
+  </li>
+  {% endfor %}
+</ol>
+{% endif %}
 
 <div class="row">
   <div class="col wide">
-    <div class="card">
-      <h2>Plan</h2>
-      <form method="post" action="/projects/{{ project.id }}/plan" enctype="multipart/form-data" class="actions" style="margin-bottom:12px">
-        <input type="file" name="file" accept="image/*,.pdf" style="flex:1 1 260px">
-        <button class="btn" type="submit">{{ 'Analyseer met AI' if ai_enabled else 'Upload (AI uit)' }}</button>
-        {% if plan and plan.filename %}<span class="muted" style="font-size:13px">huidig: {{ plan.filename }}</span>{% endif %}
-      </form>
-      {% if plan and plan.path and plan.media_type and plan.media_type.startswith('image/') %}
-      <div class="row" style="align-items:flex-start">
-        <div style="flex:1 1 320px;min-width:0"><span class="lbl">Foto van het plan</span><img src="/projects/{{ project.id }}/plan-image" alt="Geüpload plan: {{ plan.filename }}" style="width:100%;height:auto;border:1px solid var(--line);border-radius:8px;margin-top:6px"></div>
-        <div style="flex:1 1 320px;min-width:0"><span class="lbl">Herkende zones (schematisch)</span><div class="plan" style="margin-top:6px">{{ plan_svg|safe }}</div></div>
+    <section class="card">
+      <div class="card-head">
+        <div class="card-title">
+          <span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2Zm0 0v14m6-12v14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg></span>
+          <h2>Plan</h2>
+        </div>
+        {% if has_plan %}<span class="file-chip" title="{{ plan.filename }}">{{ plan.filename }}</span>{% endif %}
       </div>
-      {% else %}
-      <div class="plan">{{ plan_svg|safe }}</div>
+
+      <form method="post" action="/projects/{{ project.id }}/plan" enctype="multipart/form-data" class="dropzone" id="plan-form">
+        <input type="file" name="file" id="plan-file" accept="image/*,application/pdf,.pdf" required>
+        <label for="plan-file" class="dz-body">
+          <span class="dz-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0-4 4m4-4 4 4M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+          <span><strong id="dz-name">{{ 'Nieuw plan opladen' if has_plan else 'Sleep je plan hierheen of klik om te kiezen' }}</strong>
+          <small>Foto (JPG, PNG) of PDF · tot ±22 MB · {{ 'Claude leest ruimtes, maten en openingen' if ai_enabled else 'AI staat uit: je vult de zones zelf in' }}</small></span>
+        </label>
+        <button class="btn primary" type="submit" id="dz-submit" disabled>{{ 'Analyseer met AI' if ai_enabled else 'Opladen' }}</button>
+      </form>
+
+      {% if analysis.status == 'failed' %}
+      <div class="notice warn"><strong>Analyse mislukt.</strong> {{ analysis.message }}</div>
+      {% elif analysis.status == 'done' %}
+      <div class="notice ok">{{ analysis.message }}</div>
+      {% elif analysis.message and not running %}
+      <div class="notice">{{ analysis.message }}</div>
       {% endif %}
+
+      <div class="viewer-grid">
+        <div class="pane">
+          <div class="pane-head">
+            <span class="lbl">{{ 'Plan (PDF)' if plan and plan.media_type == 'application/pdf' else 'Opgeladen plan' }}</span>
+            {% if has_plan and plan.path %}<a href="/projects/{{ project.id }}/plan-image" target="_blank" rel="noopener">openen ↗</a>{% endif %}
+          </div>
+          <div class="viewer{{ ' is-running' if running else '' }}">
+            {% if has_plan and plan.path and plan.media_type == 'application/pdf' %}
+              <iframe src="/projects/{{ project.id }}/plan-image#view=FitH" title="Opgeladen plan: {{ plan.filename }}"></iframe>
+            {% elif has_plan and plan.path and plan.media_type and plan.media_type.startswith('image/') %}
+              <img src="/projects/{{ project.id }}/plan-image" alt="Opgeladen plan: {{ plan.filename }}">
+            {% else %}
+              <div class="empty"><strong>Nog geen plan</strong><span>Laad hierboven een foto of PDF op, of vul de zones manueel in.</span></div>
+            {% endif %}
+            {% if running %}
+            <div class="analyzing" role="status" aria-live="polite">
+              <div class="ring" aria-hidden="true"></div>
+              <strong>Claude leest je plan</strong>
+              <span>Ruimtes, maten, openingen en plafondhoogtes. Een foto duurt ongeveer een halve minuut, een PDF met veel pagina's enkele minuten. De pagina ververst vanzelf.</span>
+              <div class="progress" aria-hidden="true"><i></i></div>
+              <span class="elapsed">bezig sinds <b id="elapsed" data-s="{{ analysis.elapsed_s }}">0:00</b></span>
+            </div>
+            {% endif %}
+          </div>
+        </div>
+        <div class="pane">
+          <div class="pane-head"><span class="lbl">Herkende zones (schematisch)</span>{% if n_zones %}<span class="muted small">{{ n_zones }} zones</span>{% endif %}</div>
+          <div class="viewer plan-svg{{ ' is-running' if running else '' }}">
+            {{ plan_svg|safe }}
+            {% if running %}<div class="skeleton" aria-hidden="true"><i></i><i></i><i></i><i></i></div>{% endif %}
+          </div>
+        </div>
+      </div>
       <div class="legend">
         <span><i style="background:#dbe7fb;border-color:#1f5fbf"></i>muur-/plafondverf</span>
         <span><i style="background:#fbe6d2;border-color:#c2620a"></i>lakwerk</span>
         <span><i style="background:#dff1d6;border-color:#2f7a2a"></i>tuin</span>
         <span><i style="background:repeating-linear-gradient(45deg,#f2f2f2 0 4px,#dedede 4px 8px);border-color:#9a9a9a"></i>buiten scope / geen post</span>
-        <span class="muted" style="margin-left:auto">Zones zonder polygoon worden schematisch getekend.</span>
       </div>
-    </div>
+    </section>
 
-    <div class="card">
-      <h2>Zones &amp; maten</h2>
+    <section class="card">
+      <div class="card-head">
+        <div class="card-title">
+          <span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4zM4 10h16M10 10v9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg></span>
+          <h2>Zones &amp; maten</h2>
+          {% if n_zones %}<span class="count">{{ n_zones }}</span>{% endif %}
+        </div>
+        <a class="btn sm ghost" href="/projects/{{ project.id }}/geometry.json" target="_blank">JSON</a>
+      </div>
+      {% if running %}<div class="notice">De zones worden bijgewerkt zodra de analyse klaar is. Bewerken kan daarna.</div>{% endif %}
       <form method="post" action="/projects/{{ project.id }}/geometry">
-        <div class="scroll">
-        <table>
-          <thead><tr><th>Naam</th><th>Soort</th><th>Opp. m²</th><th>Omtrek m</th><th>Lengte m</th><th>Hoogte m</th><th>Aantal</th><th>Openingen</th><th>Tags</th><th>In scope</th><th>Wis</th></tr></thead>
+        <fieldset {{ 'disabled' if running else '' }}>
+        <div class="scroll table-wrap">
+        <table class="zones">
+          <thead><tr><th>Naam</th><th>Soort</th><th class="num" title="Vloeroppervlakte (= plafond)">Vloer m²</th><th class="num">Omtrek m</th><th class="num">Lengte m</th><th class="num">Hoogte m</th>{% if show_walls %}<th class="num" title="Netto muuroppervlakte: omtrek × hoogte − openingen + dagkanten. Rekent mee terwijl je typt.">Muren m²</th>{% endif %}<th class="num">Aantal</th><th>Openingen</th>{% for c in tag_cols %}<th class="c tagcol" title="{{ c.hint or ('Tag: ' ~ c.key) }}"><input type="hidden" name="tagcol_{{ loop.index0 }}_key" value="{{ c.key }}"><input type="hidden" name="tagcol_{{ loop.index0 }}_type" value="{{ c.type }}">{{ c.label }}</th>{% endfor %}<th class="c scope-col" title="In scope">Scope</th><th class="c"><span class="sr-only">Verwijderen</span></th></tr></thead>
           <tbody>
           {% set rows = geometry.zones + [None, None] %}
           {% for z in rows %}
           {% set i = loop.index0 %}
-          <tr>
-            <td><input type="hidden" name="zone_{{ i }}_id" value="{{ z.id if z else '' }}"><input class="sm" name="zone_{{ i }}_name" value="{{ z.name if z else '' }}" placeholder="{{ 'nieuwe zone' if not z else '' }}"></td>
+          <tr class="{{ 'new' if not z else ('out' if not z.in_scope else '') }}" data-i="{{ i }}">
+            <td><input type="hidden" name="zone_{{ i }}_id" value="{{ z.id if z else '' }}"><input class="sm" name="zone_{{ i }}_name" value="{{ z.name if z else '' }}" placeholder="{{ '+ nieuwe zone' if not z else '' }}" style="min-width:140px"></td>
             <td><select class="sm" name="zone_{{ i }}_kind">{% for k in ['ruimte','terras','oprit','gazon','haag','border','vijver','andere'] %}<option {{ 'selected' if (z and z.kind == k) or (not z and k == skill.zone_kinds[0]) else '' }}>{{ k }}</option>{% endfor %}</select></td>
-            <td><input class="sm" name="zone_{{ i }}_area" value="{{ z.area_m2 if z and z.area_m2 is not none else '' }}" style="width:70px"></td>
-            <td><input class="sm" name="zone_{{ i }}_perimeter" value="{{ z.perimeter_m if z and z.perimeter_m is not none else '' }}" style="width:70px"></td>
-            <td><input class="sm" name="zone_{{ i }}_length" value="{{ z.length_m if z and z.length_m is not none else '' }}" style="width:70px"></td>
-            <td><input class="sm" name="zone_{{ i }}_height" value="{{ z.height_m if z and z.height_m is not none else '' }}" style="width:70px"></td>
-            <td><input class="sm" name="zone_{{ i }}_count" value="{{ z.count if z and z.count is not none else '' }}" style="width:60px"></td>
-            <td><input class="sm" name="zone_{{ i }}_openings" value="{{ format_openings(z.openings) if z else '' }}" placeholder="raam 1.8x1.4 x2; deur 0.83x2.04" style="min-width:200px"></td>
-            <td><input class="sm" name="zone_{{ i }}_tags" value="{{ z.tags|join(', ') if z else '' }}" placeholder="vochtig" style="width:90px"></td>
-            <td><input type="checkbox" name="zone_{{ i }}_in_scope" {{ 'checked' if (z and z.in_scope) or not z else '' }}></td>
-            <td>{% if z %}<input type="checkbox" name="zone_{{ i }}_delete">{% endif %}</td>
+            <td><input class="sm num" name="zone_{{ i }}_area" value="{{ z.area_m2 if z and z.area_m2 is not none else '' }}"></td>
+            <td><input class="sm num" name="zone_{{ i }}_perimeter" value="{{ z.perimeter_m if z and z.perimeter_m is not none else '' }}"></td>
+            <td><input class="sm num" name="zone_{{ i }}_length" value="{{ z.length_m if z and z.length_m is not none else '' }}"></td>
+            <td><input class="sm num" name="zone_{{ i }}_height" value="{{ z.height_m if z and z.height_m is not none else '' }}"></td>
+            {% if show_walls %}<td class="num calc" data-wall-row="{{ i }}">{{ walls.get(z.id)|qty if z and walls.get(z.id) is not none else '' }}</td>{% endif %}
+            <td><input class="sm num" name="zone_{{ i }}_count" value="{{ z.count if z and z.count is not none else '' }}" style="width:64px"></td>
+            <td><input class="sm" name="zone_{{ i }}_openings" value="{{ format_openings(z.openings) if z else '' }}" placeholder="raam 1.8x1.4 x2; deur 0.83x2.04" style="min-width:210px"></td>
+            {% for c in tag_cols %}{% set j = loop.index0 %}{% set v = tag_value(z, c.key) if z else none %}
+            <td class="c">
+              {% if c.type == 'bool' %}<input type="checkbox" name="zone_{{ i }}_tag_{{ j }}" {{ 'checked' if v else '' }} aria-label="{{ c.label }}">
+              {% elif c.type == 'choice' %}<select class="sm" name="zone_{{ i }}_tag_{{ j }}" aria-label="{{ c.label }}"><option value="">—</option>{% for o in c.options %}<option {{ 'selected' if v == o else '' }}>{{ o }}</option>{% endfor %}</select>
+              {% else %}<input class="sm tag-text" name="zone_{{ i }}_tag_{{ j }}" list="tagopts-{{ j }}" value="{{ v if v is string else '' }}" aria-label="{{ c.label }}">{% endif %}
+            </td>{% endfor %}
+            <td class="c"><input type="checkbox" name="zone_{{ i }}_in_scope" {{ 'checked' if (z and z.in_scope) or not z else '' }} aria-label="In scope"></td>
+            <td class="c zone-del">{% if z %}
+              <input type="hidden" name="zone_{{ i }}_delete" value="">
+              <button type="button" class="del-x" title="Verwijder zone" aria-label="Verwijder zone {{ z.name }}">&times;</button>
+              <span class="del-confirm" hidden><span>Verwijderen?</span><button type="button" class="btn sm danger-solid del-yes">Ja</button><button type="button" class="btn sm del-no">Nee</button></span>
+            {% endif %}</td>
           </tr>
           {% endfor %}
           </tbody>
         </table>
         </div>
-        <div class="grid" style="margin:14px 0">
+        {% for c in tag_cols %}{% if c.type == 'text' %}<datalist id="tagopts-{{ loop.index0 }}">{% for o in c.options %}<option value="{{ o }}">{% endfor %}</datalist>{% endif %}{% endfor %}
+        <div class="add-tag">
+          <span class="lbl">Tagkolom toevoegen</span>
+          <input class="sm" id="new_tag_key" placeholder="bv. nieuw_pleister" aria-label="Naam nieuwe tag">
+          <select class="sm" id="new_tag_type" aria-label="Soort tag"><option value="bool">aan/uit (vinkje)</option><option value="text">met waarde</option></select>
+          <button type="button" class="btn sm" id="add_tag_col">+ Kolom</button>
+        </div>
+
+        <div class="grid settings">
           <div><label class="lbl" for="default_height_m">Standaard plafondhoogte (m)</label><input id="default_height_m" name="default_height_m" value="{{ geometry.default_height_m if geometry.default_height_m else '' }}" placeholder="uit skill: {{ skill.params.get('default_height_m', '') }}"></div>
           <div><label class="lbl" for="scale_note">Schaal / referentiemaat</label><input id="scale_note" name="scale_note" value="{{ geometry.scale_note or '' }}" placeholder="bv. 1:50 uit titelblok"></div>
-          <div><label class="lbl">&nbsp;</label><label style="display:inline-flex;gap:8px;align-items:center"><input type="checkbox" name="scale_confirmed" {{ 'checked' if geometry.scale_confirmed else '' }}> Schaal bevestigd</label></div>
+          <div><span class="lbl">Schaal</span><label class="switch {{ 'on' if geometry.scale_confirmed else '' }}"><input type="checkbox" name="scale_confirmed" {{ 'checked' if geometry.scale_confirmed else '' }}> Schaal bevestigd</label></div>
         </div>
-        {% if geometry.assumptions %}
-        <span class="lbl">Aannames van de AI · te bevestigen</span>
-        {% for a in geometry.assumptions %}
-        <label class="assume {{ 'ok' if a.confirmed else '' }}"><input type="checkbox" name="confirm_{{ a.key }}" {{ 'checked' if a.confirmed else '' }}> {{ a.text }} <span class="tag" style="margin-left:auto">{{ a.source }}</span></label>
-        {% endfor %}
+
+        {% if n_ass %}
+        <div class="checklist">
+          <div class="checklist-head">
+            <span class="lbl">Aannames van de AI · te bevestigen</span>
+            <span class="small {{ 'ok-text' if n_ok == n_ass else 'muted' }}">{{ n_ok }} van {{ n_ass }} bevestigd</span>
+          </div>
+          <div class="meter" aria-hidden="true"><i style="width:{{ (100 * n_ok / n_ass)|round|int }}%"></i></div>
+          {% for a in geometry.assumptions %}
+          <label class="assume {{ 'ok' if a.confirmed else '' }}"><input type="checkbox" name="confirm_{{ a.key }}" {{ 'checked' if a.confirmed else '' }}><span>{{ a.text }}</span><span class="tag">{{ a.source }}</span></label>
+          {% endfor %}
+        </div>
         {% endif %}
-        <div class="actions" style="margin-top:12px"><button class="btn" type="submit">Bewaar zones</button><a class="btn sm" href="/projects/{{ project.id }}/geometry.json" target="_blank">JSON</a></div>
+        <div class="actions" style="margin-top:14px"><button class="btn primary" type="submit">Bewaar zones</button><span class="muted small">Bewaren herberekent niets; dat doe je rechts.</span></div>
+        </fieldset>
       </form>
-    </div>
+    </section>
   </div>
 
-  <div class="col">
-    <div class="card">
-      <h2>Meetstaat</h2>
-      {% if result %}
-      <div class="scroll">
-      <table>
-        <thead><tr><th>Zone</th><th>Post</th><th class="num">Netto</th><th class="num">Uren</th></tr></thead>
-        <tbody>
-        {% for line in result.lines %}
-        <tr><td>{{ line.zone_name }}</td><td>{{ line.post_label }}{% if line.layers > 1 %} ({{ line.layers }} lagen){% endif %}</td><td class="num">{{ line.net_qty|qty }} {{ line.unit }}</td><td class="num">{{ line.hours|qty }}</td></tr>
-        {% endfor %}
-        </tbody>
-        <tfoot><tr style="font-weight:600"><td colspan="2">Totaal</td><td class="num">{{ result.totals.area_total_m2|qty }} m²</td><td class="num">{{ result.totals.hours_total|qty }} u</td></tr></tfoot>
-      </table>
-      </div>
-      <p style="margin:10px 0 0;font-size:14px">Materiaal {{ result.totals.material_cost|eur }} · arbeid {{ result.totals.labour_cost|eur }} · <strong>excl. btw {{ result.totals.subtotal_excl|eur }}</strong> · incl. {{ result.totals.total_incl|eur }}</p>
-      {% for a in result.assumptions %}<div class="assume {{ 'ok' if a.confirmed else '' }}" style="margin-top:8px"><span class="tag {{ '' if a.confirmed else 'warn' }}">{{ 'bevestigd' if a.confirmed else 'aanname' }}</span>{{ a.text }}</div>{% endfor %}
-      {% for w in result.warnings %}<div class="assume"><span class="tag warn">!</span>{{ w }}</div>{% endfor %}
-      {% else %}
-      <p class="muted">Nog geen berekening. Bewaar de zones en klik op "Bereken meetstaat &amp; offerte".</p>
+  <div class="col side">
+    {% if open_todos or plan_items or reservations %}
+    <section class="card">
+      <div class="card-title" style="margin-bottom:10px"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span><h2>Opvolging</h2></div>
+      {% if open_todos %}
+      <ul class="todos compact">{% for t in open_todos %}<li><form method="post" action="/todo/{{ t.id }}/klaar"><button class="check" type="submit" title="Gedaan"></button></form><div class="body"><span class="title"><a href="{{ t.link or '/todo' }}">{{ t.title }}</a></span>{% if t.due %}<span class="meta">tegen {{ t.due.strftime('%d/%m') }}</span>{% endif %}</div></li>{% endfor %}</ul>
       {% endif %}
-      <form method="post" action="/projects/{{ project.id }}/quote" class="actions" style="margin-top:12px">
-        <button class="btn primary" type="submit" {{ 'disabled' if not geometry.zones else '' }}>Bereken meetstaat &amp; offerte →</button>
-        {% if quote %}<a class="btn" href="/projects/{{ project.id }}/offerte">Offerte bekijken</a>{% endif %}
+      {% if plan_items %}
+      <span class="lbl" style="margin-top:10px">Ingepland</span>
+      <ul class="day-items">{% for it in plan_items %}<li><a class="day-item" href="/planning?dag={{ it.date_from }}&item={{ it.id }}"><strong>{{ it.date_from.strftime('%d/%m') }}{% if it.date_to != it.date_from %}–{{ it.date_to.strftime('%d/%m') }}{% endif %}{% if it.start_time %} · {{ it.start_time }}{% endif %}</strong><span class="people">{% for i in plan_who.get(it.id, []) %}<span class="chip"><i class="swatch" style="background:{{ color_of(emps[i]) }}"></i>{{ emps[i].name }}</span>{% else %}<span class="tag warn">niemand toegewezen</span>{% endfor %}</span></a></li>{% endfor %}</ul>
+      {% elif status in ['aanvaard', 'in_uitvoering'] %}
+      <a class="btn sm block" href="/planning?project={{ project.id }}">Werk inplannen →</a>
+      {% endif %}
+      {% if reservations %}<p class="muted small" style="margin:10px 0 0"><a href="/voorraad">{{ reservations|length }} artikel{{ '' if reservations|length == 1 else 'en' }} gereserveerd in de voorraad</a></p>{% endif %}
+    </section>
+    {% endif %}
+    <section class="card">
+      <div class="card-head">
+        <div class="card-title">
+          <span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h7l5 5v13H7zM14 3v5h5M10 13h6M10 17h6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/></svg></span>
+          <h2>Meetstaat</h2>
+        </div>
+        {% if result %}<span class="pill {{ 'warn' if result.indicative else 'ok' }}">{{ 'indicatief' if result.indicative else 'definitief' }}</span>{% endif %}
+      </div>
+      {% if result and quote and diff %}
+      {% set sent = status not in ['voorbereid', 'gemaakt'] %}
+      <div class="notice {{ 'warn' if sent else '' }} small stale">
+        <strong>Gewijzigd sinds offerte {{ quote.number }} v{{ quote.version }}.</strong>
+        <span class="deltas">
+          {% for key, label, fmt in [('area_total_m2', 'oppervlakte', 'm2'), ('hours_total', 'uren', 'u'), ('total_incl', 'incl. btw', 'eur') if incl_vat else ('subtotal_excl', 'excl. btw', 'eur')] %}
+          {% set v = diff[key] %}{% if v|abs >= 0.005 %}<span class="delta {{ 'up' if v > 0 else 'down' }}">{{ label }} {{ '+' if v > 0 else '−' }}{{ (v|abs)|eur if fmt == 'eur' else ((v|abs)|qty ~ (' m²' if fmt == 'm2' else ' u')) }}</span>{% endif %}
+          {% endfor %}
+        </span>
+        <span>Hieronder zie je de nieuwe cijfers{% if sent %}; de klant kreeg nog v{{ quote.version }}{% endif %}. Herbereken om ze als v{{ quote.version + 1 }} te bewaren.</span>
+      </div>
+      {% elif result and not quote %}
+      <p class="muted small" style="margin:0 0 10px">Voorlopige berekening op basis van de zones. Bereken om er een offerte van te maken.</p>
+      {% endif %}
+      {% if result %}
+      <div class="kpis">
+        <div><span>Oppervlakte</span><strong id="kpi-area_total_m2" data-fmt="m2">{{ result.totals.area_total_m2|qty }} m²</strong></div>
+        <div><span>Werkuren</span><strong id="kpi-hours_total" data-fmt="u">{{ result.totals.hours_total|qty }} u</strong></div>
+        <div class="{{ '' if incl_vat else 'hl' }}"><span>Excl. btw</span><strong id="kpi-subtotal_excl" data-fmt="eur">{{ result.totals.subtotal_excl|eur }}</strong></div>
+        <div class="{{ 'hl' if incl_vat else '' }}"><span>Incl. btw</span><strong id="kpi-total_incl" data-fmt="eur">{{ result.totals.total_incl|eur }}</strong></div>
+      </div>
+      <p class="notice small live-note" id="live-note" hidden>Live berekend uit de zones die je aan het bewerken bent; nog niet bewaard.</p>
+      <p class="muted small" style="margin:0 0 10px">Materiaal {{ result.totals.material_cost|eur }} · arbeid {{ result.totals.labour_cost|eur }}</p>
+      <details class="lines">
+        <summary>{{ result.lines|length }} meetstaatregels</summary>
+        <div class="scroll">
+        <table>
+          <thead><tr><th>Zone</th><th>Post</th><th class="num">Netto</th><th class="num">Uren</th></tr></thead>
+          <tbody>
+          {% for line in result.lines %}
+          <tr><td>{{ line.zone_name }}</td><td>{{ line.post_label }}{% if line.layers > 1 %} <span class="muted">({{ line.layers }} lagen)</span>{% endif %}</td><td class="num">{{ line.net_qty|qty }} {{ line.unit }}</td><td class="num">{{ line.hours|qty }}</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        </div>
+      </details>
+      {% set open_ass = result.assumptions|rejectattr('confirmed')|list %}
+      {% if open_ass or result.warnings %}
+      <details class="lines open-items">
+        <summary><span class="pill warn">{{ open_ass|length + result.warnings|length }}</span> open aannames en waarschuwingen maken deze offerte indicatief</summary>
+        {% for w in result.warnings %}<div class="assume small"><span>{{ w }}</span></div>{% endfor %}
+        {% for a in open_ass %}<div class="assume small"><span>{{ a.text }}</span></div>{% endfor %}
+        <p class="muted small" style="margin:6px 0 0">Bevestig ze links bij de zones en herbereken.</p>
+      </details>
+      {% endif %}
+      {% else %}
+      <div class="empty small"><strong>Nog geen berekening</strong><span>Bewaar de zones en bereken daarna de meetstaat en offerte.</span></div>
+      {% endif %}
+      <form method="post" action="/projects/{{ project.id }}/quote" class="stack">
+        <button class="btn primary block {{ 'pulse' if diff else '' }}" type="submit" {{ 'disabled' if not geometry.zones or running else '' }}>{% if diff %}Herbereken → offerte v{{ quote.version + 1 }}{% elif quote %}Herbereken meetstaat &amp; offerte →{% else %}Bereken meetstaat &amp; offerte →{% endif %}</button>
+        {% if quote %}<a class="btn block" href="/projects/{{ project.id }}/offerte">Offerte bekijken</a>{% endif %}
       </form>
-    </div>
+    </section>
 
-    <div class="assist">
-      <span class="lbl" style="color:var(--accent)">AI-assist</span>
-      <form method="post" action="/projects/{{ project.id }}/assist" class="actions">
-        <input name="instruction" placeholder="bv. 'Badkamer niet meenemen, keuken 3 lagen vochtwerend'" required style="flex:1 1 220px" {{ 'disabled' if not ai_enabled else '' }}>
-        <button class="btn primary" type="submit" {{ 'disabled' if not ai_enabled else '' }}>Stuur</button>
+    <section class="card assist{{ ' is-working' if assist_job else '' }}">
+      <div class="card-title">
+        <span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.8 4.7L18.5 9.5 13.8 11.3 12 16l-1.8-4.7L5.5 9.5l4.7-1.8zM19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z" fill="currentColor"/></svg></span>
+        <h2>AI-assist</h2>
+      </div>
+      <p class="muted small" style="margin:6px 0 10px">Pas zones aan in gewone taal. De berekening blijft deterministisch.</p>
+      {% if assist_job %}
+      <div class="ai-working"><span class="ring" aria-hidden="true"></span><div><strong>Claude past je zones aan</strong><span class="muted small">"{{ assist_job.title[11:] }}" · de pagina ververst vanzelf</span></div></div>
+      {% endif %}
+      <form method="post" action="/projects/{{ project.id }}/assist" class="stack">
+        <textarea name="instruction" placeholder="bv. 'Badkamer niet meenemen, keuken 3 lagen vochtwerend'" required rows="3" {{ 'disabled' if not ai_enabled or running or assist_job else '' }}></textarea>
+        <button class="btn primary" type="submit" {{ 'disabled' if not ai_enabled or running or assist_job else '' }}>Stuur naar AI</button>
       </form>
-      {% if not ai_enabled %}<p class="muted" style="font-size:13px;margin:8px 0 0">Zet ANTHROPIC_API_KEY in .env om AI-assist en foto-analyse te gebruiken. Zonder key werk je met de zone-tabel.</p>{% endif %}
-    </div>
+      {% if not ai_enabled %}<p class="muted small" style="margin:8px 0 0">Zet ANTHROPIC_API_KEY in .env om AI-assist en plan-analyse te gebruiken.</p>{% endif %}
+    </section>
+
+    <section class="card history" id="historiek">
+      <div class="card-title" style="margin-bottom:12px">
+        <span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 7v5l3 2M3.5 12a8.5 8.5 0 1 0 2.5-6L3.5 8.5M3.5 4v4.5H8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        <h2>Historiek</h2>
+      </div>
+      {% if history %}
+      <ol class="timeline">
+        {% for e in history %}
+        <li class="k-{{ e.kind }}">
+          <span class="when">{{ e.created_at.strftime('%d/%m %H:%M') }}{% if e.actor != 'systeem' %} · {{ e.actor }}{% endif %}</span>
+          {% if e.kind == 'mail' and e.ref_id in mails %}
+          {% set m = mails[e.ref_id] %}
+          <details>
+            <summary>{{ e.text }}</summary>
+            <div class="mail">
+              <div class="mail-head"><span>Aan: {{ m.to }}{% if m.sent_to and m.sent_to != m.to %} <span class="tag warn" title="Testmodus">test → {{ m.sent_to }}</span>{% endif %}</span><span class="st-mail st-{{ m.status }}">{{ {'wacht': 'wacht in outbox', 'verzonden': 'verzonden', 'mislukt': 'mislukt'}[m.status] }}</span></div>
+              <strong>{{ m.subject }}</strong>
+              <pre>{{ m.body }}</pre>
+              {% if m.error %}<p class="small" style="color:var(--warn)">{{ m.error }}</p>{% endif %}
+              {% if m.status != 'verzonden' %}<form method="post" action="/outbox/{{ m.id }}/verstuur" style="margin-top:8px"><button class="btn sm" type="submit">Verstuur nu</button></form>{% endif %}
+            </div>
+          </details>
+          {% elif e.link %}
+          <a class="what" href="{{ e.link }}">{{ e.text }}</a>
+          {% else %}
+          <span class="what">{{ e.text }}</span>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ol>
+      {% else %}
+      <p class="muted small">Nog geen historiek.</p>
+      {% endif %}
+    </section>
   </div>
 </div>
+
+<script>
+(() => {
+  const form = document.getElementById("plan-form");
+  const input = document.getElementById("plan-file");
+  const name = document.getElementById("dz-name");
+  const submit = document.getElementById("dz-submit");
+  const pick = () => {
+    const f = input.files[0];
+    if (!f) return;
+    name.textContent = f.name + " · " + (f.size / 1e6).toFixed(1) + " MB";
+    form.classList.add("has-file");
+    submit.disabled = false;
+  };
+  input.addEventListener("change", pick);
+  ["dragenter", "dragover"].forEach((t) => form.addEventListener(t, (e) => { e.preventDefault(); form.classList.add("drag"); }));
+  ["dragleave", "drop"].forEach((t) => form.addEventListener(t, () => form.classList.remove("drag")));
+  form.addEventListener("drop", (e) => {
+    e.preventDefault();
+    if (e.dataTransfer.files.length) { input.files = e.dataTransfer.files; pick(); }
+  });
+  form.addEventListener("submit", () => {
+    form.classList.add("uploading");
+    name.textContent = "Opladen…";
+    setTimeout(() => (submit.disabled = true), 0);
+  });
+
+  const el = document.getElementById("elapsed");
+  if (!el) return;
+  let s = parseInt(el.dataset.s, 10) || 0;
+  const show = () => (el.textContent = Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"));
+  show();
+  setInterval(() => { s += 1; show(); }, 1000);
+  // the page reloads itself when the analysis job finishes (see base.html)
+})();
+// zones: delete with an in-row confirmation; add a tag column
+(() => {
+  const table = document.querySelector("table.zones");
+  if (!table) return;
+  table.addEventListener("click", (e) => {
+    const cell = e.target.closest("td.zone-del");
+    if (!cell) return;
+    const x = cell.querySelector(".del-x"), ask = cell.querySelector(".del-confirm");
+    if (e.target.closest(".del-x")) { x.hidden = true; ask.hidden = false; ask.querySelector(".del-no").focus(); }
+    else if (e.target.closest(".del-no")) { ask.hidden = true; x.hidden = false; x.focus(); }
+    else if (e.target.closest(".del-yes")) {
+      cell.querySelector("input[type=hidden]").value = "1";
+      table.closest("form").requestSubmit();
+    }
+  });
+  const key = document.getElementById("new_tag_key"), type = document.getElementById("new_tag_type");
+  const add = () => {
+    const k = key.value.trim().replace(/=/g, "");
+    const existing = [...table.querySelectorAll("th.tagcol input[name$='_key']")].map((i) => i.value);
+    if (!k || existing.includes(k)) { key.focus(); return; }
+    const j = existing.length;
+    const th = document.createElement("th");
+    th.className = "c tagcol";
+    th.innerHTML = `<input type="hidden" name="tagcol_${j}_key"><input type="hidden" name="tagcol_${j}_type" value="${type.value}">`;
+    th.querySelector("input").value = k;
+    th.append(k.replace(/_/g, " "));
+    table.querySelector("th.scope-col").before(th);
+    table.querySelectorAll("tbody tr").forEach((tr) => {
+      const td = document.createElement("td");
+      td.className = "c";
+      const input = document.createElement("input");
+      input.name = `zone_${tr.dataset.i}_tag_${j}`;
+      input.setAttribute("aria-label", k);
+      if (type.value === "bool") input.type = "checkbox"; else input.className = "sm tag-text";
+      td.append(input);
+      tr.querySelector("td.zone-del").previousElementSibling.before(td);
+    });
+    key.value = "";
+  };
+  // live: wall area per row + meetstaat totals while typing (server computes with the engine; nothing is saved)
+  const form = table.closest("form");
+  const qty = (v) => String(+v.toFixed(2)).replace(".", ",");  // same as the server's |qty
+  const eur = (v) => v.toLocaleString("nl-BE", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  const fmt = {m2: (v) => `${qty(v)} m²`, u: (v) => `${qty(v)} u`, eur: (v) => `€ ${eur(v)}`};
+  let timer, seq = 0;
+  const refresh = async () => {
+    const mine = ++seq;
+    const r = await fetch(`/projects/{{ project.id }}/geometry/preview`, {method: "POST", body: new FormData(form)});
+    if (!r.ok || mine !== seq) return;
+    const data = await r.json();
+    table.querySelectorAll("td[data-wall-row]").forEach((td) => {
+      const i = td.dataset.wallRow;
+      const id = form.querySelector(`[name=zone_${i}_id]`).value || `z${i}`;
+      const v = data.walls[id];
+      td.textContent = v == null ? "" : qty(v);
+    });
+    if (data.totals) {
+      for (const [k, v] of Object.entries(data.totals)) {
+        const el = document.getElementById(`kpi-${k}`);
+        if (el) el.textContent = fmt[el.dataset.fmt](v);
+      }
+      const note = document.getElementById("live-note");
+      if (note) note.hidden = false;
+    }
+  };
+  form.addEventListener("input", (e) => {
+    if (e.target.closest(".add-tag")) return;
+    clearTimeout(timer);
+    timer = setTimeout(refresh, 250);
+  });
+  document.getElementById("add_tag_col").addEventListener("click", add);
+  key.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); add(); } });
+})();
+</script>
 {% endblock %}

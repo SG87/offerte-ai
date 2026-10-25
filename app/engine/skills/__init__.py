@@ -31,6 +31,7 @@ class Skill:
     prompt: str = ""
     default_prices: dict[str, Any] = field(default_factory=dict)
     path: Path | None = None
+    tags: list[dict[str, Any]] = field(default_factory=list)  # zone tags the sector knows (rules.yaml 'tags')
 
     def default_price_config(self) -> PriceConfig:
         d = dict(self.default_prices)
@@ -80,4 +81,69 @@ def load_skill(sector: str) -> Skill:
         prompt=prompt,
         default_prices=dict(rules.get("default_prices", {})),
         path=folder,
+        tags=list(rules.get("tags", [])),
     )
+
+
+# ---------- zone tags as columns ----------
+# A zone tag is either a flag ("vochtig") or a key with a value ("ondergrond=gyproc"); posts select zones on
+# the exact string through `condition_tag`, so both forms work in the rules without engine changes.
+
+TAG_TYPES = ("bool", "choice", "text")  # checkbox | fixed list | free entry with suggestions
+
+
+@dataclass
+class TagColumn:
+    key: str
+    label: str
+    type: str = "bool"
+    options: list[str] = field(default_factory=list)
+    hint: str = ""
+
+
+def split_tag(tag: str) -> tuple[str, str | None]:
+    key, sep, value = tag.partition("=")
+    return key.strip(), (value.strip() if sep else None)
+
+
+def tag_value(zone: Any, key: str) -> str | bool | None:
+    """True for a flag, the value for a valued tag, None when the zone doesn't have it."""
+    for tag in getattr(zone, "tags", None) or []:
+        k, v = split_tag(tag)
+        if k == key:
+            return True if v is None else v
+    return None
+
+
+def _label(key: str) -> str:
+    return key.replace("_", " ").capitalize()
+
+
+def tag_columns(skill: Skill, zones: list[Any]) -> list[TagColumn]:
+    """One column per tag: those the skill declares or uses in its posts, then the ones found on the zones."""
+    cols: dict[str, TagColumn] = {}
+
+    def add(key: str, value: str | None, label: str | None = None) -> TagColumn:
+        col = cols.setdefault(key, TagColumn(key, label or _label(key), "bool" if value is None else "text"))
+        if value is not None:
+            if col.type == "bool":
+                col.type = "text"
+            if value and value not in col.options:
+                col.options.append(value)
+        return col
+
+    for t in skill.tags:
+        cols[t["key"]] = TagColumn(
+            key=t["key"],
+            label=t.get("label") or _label(t["key"]),
+            type=t.get("type", "bool") if t.get("type", "bool") in TAG_TYPES else "bool",
+            options=[str(o) for o in t.get("options", [])],
+            hint=t.get("hint", ""),
+        )
+    for post in skill.posts:
+        if tag := post.get("condition_tag"):
+            add(*split_tag(tag))
+    for zone in zones:
+        for tag in getattr(zone, "tags", None) or []:
+            add(*split_tag(tag))
+    return list(cols.values())

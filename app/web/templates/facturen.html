@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Facturen · Offerte-AI{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Facturen</h1>
+    <p class="lead" style="margin:0">Bij "Werk afgerond" maken we een conceptfactuur uit de offerte. Keur ze goed, verstuur ze (Peppol voor bedrijven, PDF voor particulieren) en volg de betaling op.</p>
+  </div>
+  {% if open_amount %}<div class="card" style="margin:0;padding:12px 16px"><span class="lbl">Openstaand</span><strong style="font-size:20px">{{ open_amount|eur }}</strong></div>{% endif %}
+</div>
+
+<nav class="tabs">
+  <a href="/facturen" class="{{ 'on' if not status else '' }}">Alle</a>
+  {% for k, label in statuses.items() %}
+  <a href="/facturen?status={{ k }}" class="{{ 'on' if status == k else '' }}">{{ label }}{% if counts[k] %} <span class="count">{{ counts[k] }}</span>{% endif %}</a>
+  {% endfor %}
+</nav>
+
+<section class="card">
+  {% if invoices %}
+  <div class="scroll">
+  <table class="list">
+    <thead><tr><th>Nummer</th><th>Klant</th><th>Omschrijving</th><th>Datum</th><th>Vervalt</th><th class="num">Totaal incl. btw</th><th>Status</th></tr></thead>
+    <tbody>
+    {% for inv, tot, due in invoices %}
+    <tr>
+      <td><a href="/facturen/{{ inv.id }}"><strong>{{ inv.number or 'concept' }}</strong></a></td>
+      <td>{{ inv.client_name or '—' }} <span class="tag">{{ 'B2B' if inv.b2b else 'B2C' }}</span></td>
+      <td>{{ inv.title or '' }}</td>
+      <td>{{ inv.invoice_date.strftime('%d/%m/%Y') if inv.invoice_date else '—' }}</td>
+      <td>{% if due %}<span class="{{ 'warn-text' if inv.status in ['goedgekeurd', 'verzonden'] and due < today else '' }}">{{ due.strftime('%d/%m/%Y') }}</span>{% else %}—{% endif %}</td>
+      <td class="num">{{ tot.total|eur }}</td>
+      <td><span class="inv-st inv-{{ inv.status }}">{{ statuses[inv.status] }}</span>{% if inv.peppol_status == 'klaar' and inv.status == 'goedgekeurd' %} <span class="tag">klaar voor Peppol</span>{% endif %}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <div class="empty"><strong>Geen facturen{{ ' met deze status' if status else '' }}</strong><span>Een factuur ontstaat vanzelf wanneer je bij een project "Werk afgerond" kiest.</span></div>
+  {% endif %}
+</section>
+{% endblock %}

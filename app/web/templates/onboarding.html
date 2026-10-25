@@ -1,9 +1,10 @@
 {% extends "base.html" %}
 {% block title %}Onboarding · Offerte-AI{% endblock %}
+{% block watch %}kind:bedrijf{% endblock %}
 {% block content %}
 <h1>In welke sector werk je?</h1>
 <p class="lead">De sector bepaalt welke basis-skill (rekenregels, posten, eenheden) je krijgt. Je kan die later altijd aanpassen.</p>
-<form method="post" action="/onboarding">
+<form method="post" action="/onboarding" enctype="multipart/form-data">
   <div class="row">
     <div class="col wide">
       <div class="card">
@@ -29,16 +30,52 @@
       </div>
     </div>
     <div class="col">
-      <div class="card">
+      <div class="card{{ ' is-working' if lookup_job else '' }}" style="position:relative">
+        {% if lookup_job %}
+        <div class="analyzing" role="status" aria-live="polite">
+          <div class="ring" aria-hidden="true"></div>
+          <strong>AI zoekt je bedrijf op</strong>
+          <span>Website, contactgegevens, btw-nummer, logo en huisstijlkleuren. Meestal 10 à 30 seconden; de velden vullen zich vanzelf. Kies intussen je sector.</span>
+          <div class="progress" aria-hidden="true"><i></i></div>
+        </div>
+        {% endif %}
         <h2>Bedrijfsgegevens</h2>
         <p class="muted" style="font-size:13px">Vooraf ingevuld uit je website waar mogelijk — controleer ze.</p>
         <div class="field"><label class="lbl" for="company_name">Bedrijfsnaam</label><input id="company_name" name="company_name" value="{{ org.company_name or '' }}"></div>
         <div class="field"><label class="lbl" for="address">Adres</label><input id="address" name="address" value="{{ org.address or '' }}"></div>
         <div class="field"><label class="lbl" for="vat_number">Btw-nummer</label><input id="vat_number" name="vat_number" value="{{ org.vat_number or '' }}"></div>
         <div class="field"><label class="lbl" for="phone">Telefoon</label><input id="phone" name="phone" value="{{ org.phone or '' }}"></div>
+      </div>
+      <div class="card">
+        <h2>Huisstijl</h2>
+        <p class="muted" style="font-size:13px">Logo en kleuren van je website. Ze kleuren de app en komen later op je offertes.</p>
+        <div class="brandbox">
+          {% if org.logo_file %}<img class="logo-preview" id="logo-preview" src="/branding/logo?v={{ org.logo_file }}" alt="logo">
+          {% else %}<img class="logo-preview" id="logo-preview" alt="logo" hidden><span class="no-logo" id="no-logo">geen logo gevonden</span>{% endif %}
+        </div>
+        <div class="field"><label class="lbl" for="logo">Ander logo uploaden</label><input id="logo" name="logo" type="file" accept="image/svg+xml,image/png,image/jpeg,image/webp"></div>
+        <div class="colors">
+          <div class="field"><label class="lbl" for="brand_primary">Hoofdkleur</label><input id="brand_primary" name="brand_primary" type="color" value="{{ org.brand_primary or '#1f5fbf' }}"></div>
+          <div class="field"><label class="lbl" for="brand_secondary">Tweede kleur</label><input id="brand_secondary" name="brand_secondary" type="color" value="{{ org.brand_secondary or '#5f5f5f' }}"></div>
+        </div>
         <div class="actions"><button class="btn primary" type="submit">Volgende: prijzen instellen</button></div>
       </div>
     </div>
   </div>
 </form>
+<script>
+  // live preview; the server recomputes contrast-safe theme colours on save
+  document.getElementById("brand_primary").addEventListener("input", (e) => {
+    const root = document.documentElement.style;
+    root.setProperty("--brand", e.target.value);
+    root.setProperty("--accent", e.target.value);
+  });
+  document.getElementById("logo").addEventListener("change", (e) => {
+    const f = e.target.files[0], img = document.getElementById("logo-preview");
+    if (!f) return;
+    img.src = URL.createObjectURL(f);
+    img.hidden = false;
+    document.getElementById("no-logo")?.remove();
+  });
+</script>
 {% endblock %}

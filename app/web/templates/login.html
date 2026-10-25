@@ -5,18 +5,28 @@
   <div class="card" style="flex:0 1 520px">
     <h1>Welkom bij Offerte-AI</h1>
     <p class="lead">Plan of foto in, meetstaat en offerte uit. Meld je aan met je <strong>professionele e-mailadres</strong>:
-      we herkennen je bedrijf en sector automatisch via je website.</p>
-    <form method="post" action="/login">
+      voor een nieuw account herkennen we je bedrijf, sector, logo en huisstijl automatisch via je website.</p>
+    {% if error %}<div class="flash warn">{{ error }}</div>{% endif %}
+    <form method="post" action="/login" id="login-form">
       <div class="field">
         <label class="lbl" for="email">E-mailadres</label>
-        <input id="email" name="email" type="email" required placeholder="info@jouwbedrijf.be" autofocus>
+        <input id="email" name="email" type="email" required placeholder="info@jouwbedrijf.be" value="{{ email or '' }}" autofocus>
       </div>
       <div class="actions">
-        <button class="btn primary" type="submit">Verder</button>
-        <span class="muted" style="font-size:13px">Google / Microsoft aanmelden: later (placeholder).</span>
+        <button class="btn primary" type="submit">Inloggen</button>
+        <button class="btn" type="submit" formaction="/signup" data-lookup>Maak nieuw account aan</button>
       </div>
+      <p class="busy" id="busy" hidden><span class="spinner"></span>Account aanmaken…</p>
     </form>
-    <p class="muted" style="font-size:13px;margin-top:16px">v0.1 — één account per bedrijf, geen wachtwoord in deze ontwikkelversie.</p>
+    <p class="muted" style="font-size:13px;margin-top:16px">v0.1 — één account per bedrijf, geen wachtwoord in deze ontwikkelversie. Google / Microsoft aanmelden: later.</p>
   </div>
 </div>
+<script>
+  document.getElementById("login-form").addEventListener("submit", (e) => {
+    const form = e.currentTarget;
+    // disable after the submission is built, so the clicked button's formaction still applies
+    setTimeout(() => form.querySelectorAll("button").forEach((b) => (b.disabled = true)), 0);
+    if (e.submitter && e.submitter.hasAttribute("data-lookup")) document.getElementById("busy").hidden = false;
+  });
+</script>
 {% endblock %}

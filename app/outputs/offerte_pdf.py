@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import io
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, timedelta
+from html import escape
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -12,6 +13,8 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
+from app.i18n import t, unit
+from app.outputs.offer_lines import basis_label, offer_lines, offer_totals
 from app.schemas import QuoteResult
 
 
@@ -28,6 +31,10 @@ class OffertePartijen:
     intro: str | None = None
     conditions: str | None = None
     validity_days: int = 30
+    prices_incl_vat: bool = True  # B2C: incl. btw; B2B: excl. btw (btw added at the bottom)
+    client_vat: str | None = None
+    language: str = "nl"  # the customer's language (app/i18n.py)
+    translations: dict[str, str] = field(default_factory=dict)  # free texts (post labels, rooms, assumptions)
 
 
 def _eur(v: float) -> str:
@@ -51,7 +58,13 @@ def build_offerte_pdf(result: QuoteResult, parties: OffertePartijen) -> bytes:
     h1 = ParagraphStyle("h1", parent=styles["Heading1"], fontSize=18, spaceAfter=2)
     h2 = ParagraphStyle("h2", parent=styles["Heading2"], fontSize=12, spaceBefore=8, spaceAfter=4)
 
+    lang = parties.language
+
+    def tr(text: str) -> str:
+        return parties.translations.get(text, text)
+
     today = result.created_on or date.today()
+    valid = today + timedelta(days=parties.validity_days)
     story = []
 
     head = Table(
@@ -62,7 +75,8 @@ def build_offerte_pdf(result: QuoteResult, parties: OffertePartijen) -> bytes:
                     body,
                 ),
                 Paragraph(
-                    f"<b>OFFERTE</b><br/>Nr. {parties.number}<br/>Datum: {today:%d-%m-%Y}<br/>Geldig tot: {today + timedelta(days=parties.validity_days):%d-%m-%Y}",
+                    f"<b>{t(lang, 'offerte').upper()}</b><br/>{t(lang, 'nr')} {parties.number}<br/>"
+                    f"{t(lang, 'datum')}: {today:%d-%m-%Y}<br/>{t(lang, 'geldig_tot')}: {valid:%d-%m-%Y}",
                     body,
                 ),
             ]
@@ -73,41 +87,39 @@ def build_offerte_pdf(result: QuoteResult, parties: OffertePartijen) -> bytes:
     story += [head, Spacer(1, 6 * mm)]
     story += [
         Paragraph(
-            f"<b>Klant</b><br/>{parties.client_name or '[KLANT]'}<br/>{parties.client_address or ''}", body
+            f"<b>{t(lang, 'klant')}</b><br/>{escape(parties.client_name or '[KLANT]')}<br/>{escape(parties.client_address or '')}"
+            + (f"<br/>{t(lang, 'btw_nr')} {parties.client_vat}" if parties.client_vat else ""),
+            body,
         ),
         Spacer(1, 4 * mm),
     ]
-    story += [Paragraph(parties.title, h1)]
+    story += [Paragraph(escape(parties.title), h1)]
     if parties.intro:
-        story += [Paragraph(parties.intro, body), Spacer(1, 3 * mm)]
+        story += [Paragraph(escape(parties.intro), body), Spacer(1, 3 * mm)]
     if result.indicative:
         story += [
             Paragraph(
-                "<i>Indicatieve offerte: hoeveelheden gemeten op plan; aannames hieronder zijn nog te bevestigen.</i>",
+                f"<i>{t(lang, 'indicatief')}</i>",
                 small,
             ),
             Spacer(1, 2 * mm),
         ]
 
-    # quote lines (per zone/post, material+labour merged into one price per unit)
-    rows = [["Omschrijving", "Hoev.", "Eenh.", "Prijs/eenh.", "Totaal"]]
-    for line in result.lines:
-        desc = f"{line.zone_name}: {line.post_label}" + (f" ({line.layers} lagen)" if line.layers > 1 else "")
-        unit_price = line.line_total / line.net_qty if line.net_qty else 0.0
+    # quote lines (per zone/post, material+labour merged into one price per unit), on the customer's price basis
+    basis = basis_label(parties.prices_incl_vat, lang)
+    rows = [[t(lang, "omschrijving"), t(lang, "hoev"), t(lang, "eenh"), f"{t(lang, 'prijs_eenh')}\n{basis}", f"{t(lang, 'totaal')}\n{basis}"]]
+    for ol in offer_lines(result, parties.prices_incl_vat, lang, tr):
         rows.append(
-            [Paragraph(desc, body), _qty(line.net_qty), line.unit, _eur(unit_price), _eur(line.line_total)]
+            [
+                Paragraph(escape(ol.description), body),
+                _qty(ol.qty) if ol.qty is not None else "",
+                ol.unit,
+                _eur(ol.unit_price) if ol.unit_price is not None else "",
+                _eur(ol.amount),
+            ]
         )
-    t = result.totals
-    # labour is priced per line above; the rounding of total hours is shown as a separate line when it differs
-    line_sum = sum(line.line_total for line in result.lines)
-    rounding = round(t.subtotal_excl - line_sum, 2)
-    if abs(rounding) >= 0.01:
-        rows.append([Paragraph("Afronding uren", body), "", "", "", _eur(rounding)])
-    rows += [
-        ["", "", "", "Subtotaal excl. btw", _eur(t.subtotal_excl)],
-        ["", "", "", f"Btw {t.vat_pct:g} %", _eur(t.vat)],
-        ["", "", "", "Totaal incl. btw", _eur(t.total_incl)],
-    ]
+    totals = result.totals
+    rows += [["", "", "", label, _eur(amount)] for label, amount, _ in offer_totals(result, parties.prices_incl_vat, lang)]
     table = Table(rows, colWidths=[86 * mm, 18 * mm, 14 * mm, 28 * mm, 28 * mm], repeatRows=1)
     table.setStyle(
         TableStyle(
@@ -118,50 +130,43 @@ def build_offerte_pdf(result: QuoteResult, parties: OffertePartijen) -> bytes:
                 ("ALIGN", (1, 1), (-1, -1), "RIGHT"),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
                 ("LINEBELOW", (0, 0), (-1, -4), 0.3, colors.HexColor("#DCDCDC")),
-                ("FONTNAME", (3, -1), (-1, -1), "Helvetica-Bold"),
+                ("FONTNAME", (3, -3), (-1, -3), "Helvetica-Bold"),  # headline total, on the price basis
+                ("TEXTCOLOR", (3, -2), (-1, -1), colors.HexColor("#444444")),
                 ("LINEABOVE", (3, -3), (-1, -3), 0.8, colors.black),
             ]
         )
     )
     story += [table, Spacer(1, 5 * mm)]
 
-    story += [Paragraph("Inbegrepen / niet inbegrepen", h2)]
-    excluded = [a.text for a in result.assumptions]
-    story += [
-        Paragraph(
-            "Hoeveelheden zijn gemeten op het aangeleverde plan; afwijkingen op de werf worden verrekend als meerwerk.",
-            body,
-        )
-    ]
+    story += [Paragraph(t(lang, "inbegrepen"), h2)]
+    excluded = [escape(tr(a.text)) for a in result.assumptions]
+    story += [Paragraph(t(lang, "gemeten"), body)]
     if excluded:
-        story += [Paragraph("Aannames: " + " · ".join(excluded), small)]
+        story += [Paragraph(f"{t(lang, 'aannames')}: " + " · ".join(excluded), small)]
     if parties.conditions:
-        story += [Paragraph("Voorwaarden", h2), Paragraph(parties.conditions, small)]
+        story += [Paragraph(t(lang, "voorwaarden"), h2), Paragraph(escape(parties.conditions), small)]
 
     story += [
         Spacer(1, 10 * mm),
-        Paragraph(
-            "Handtekening aannemer: ____________________ &nbsp;&nbsp;&nbsp;&nbsp; Voor akkoord klant (naam, datum): ____________________",
-            small,
-        ),
+        Paragraph(t(lang, "handtekening"), small),
     ]
 
     # appendix: meetstaat
-    story += [Spacer(1, 8 * mm), Paragraph("Bijlage A — Meetstaat", h2)]
-    mrows = [["Ruimte/zone", "Post", "Bruto", "Aftrek", "Netto", "Eenh.", "Uren"]]
+    story += [Spacer(1, 8 * mm), Paragraph(t(lang, "bijlage_meetstaat"), h2)]
+    mrows = [[t(lang, k) for k in ("ruimte_zone", "post", "bruto", "aftrek", "netto", "eenh", "uren")]]
     for line in result.lines:
         mrows.append(
             [
-                line.zone_name,
-                Paragraph(line.post_label, small),
+                tr(line.zone_name),
+                Paragraph(escape(tr(line.post_label)), small),
                 _qty(line.gross_qty),
                 _qty(line.deduction_qty),
                 _qty(line.net_qty),
-                line.unit,
+                unit(lang, line.unit),
                 _qty(line.hours),
             ]
         )
-    mrows.append(["Totaal", "", "", "", f"{_qty(t.area_total_m2)} m²", "", _qty(t.hours_total)])
+    mrows.append([t(lang, "totaal"), "", "", "", f"{_qty(totals.area_total_m2)} m²", "", _qty(totals.hours_total)])
     mt = Table(mrows, colWidths=[30 * mm, 70 * mm, 16 * mm, 16 * mm, 18 * mm, 12 * mm, 12 * mm], repeatRows=1)
     mt.setStyle(
         TableStyle(
