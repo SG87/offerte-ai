@@ -95,7 +95,7 @@ def test_web_b2b_and_b2c_quotes(client):
     r = client.post(
         "/projects",
         data={"name": "Kantoor Vos", "customer_id": "new", "new_name": "Vos bv", "new_kind": "b2b",
-              "new_vat_number": "BE0999888777", "new_address": "Industrieweg 4, Gent", "scope": ["muren", "plafonds"]},
+              "new_vat_number": "BE0999888777", "new_street": "Industrieweg 4", "new_city": "Gent", "scope": ["muren", "plafonds"]},
         follow_redirects=False,
     )
     pid = r.headers["location"].rsplit("/", 1)[-1]
@@ -113,7 +113,7 @@ def test_web_b2b_and_b2c_quotes(client):
     assert "Vos bv" in klanten and ">B2B</span>" in klanten
 
     # an existing B2C customer: lines incl. btw, headline incl. btw, btw shown as included
-    client.post("/contacten/klanten", data={"name": "Fam. Peeters", "kind": "b2c", "address": "Dorp 1"})
+    client.post("/contacten/klanten", data={"name": "Fam. Peeters", "kind": "b2c", "street": "Dorp", "house_number": "1"})
     cid = re.search(r'<option value="(\d+)"[^>]*>Fam\. Peeters', client.get("/projects").text).group(1)
     r = client.post("/projects", data={"name": "Living Peeters", "customer_id": cid, "scope": ["muren"]}, follow_redirects=False)
     pid2 = r.headers["location"].rsplit("/", 1)[-1]

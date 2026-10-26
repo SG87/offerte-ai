@@ -83,6 +83,8 @@ def build_meetstaat_xlsx(result: QuoteResult, title: str = "Meetstaat") -> bytes
         ("Materiaal (excl. marge)", t.material_cost),
         ("Marge op materiaal", t.margin),
         (f"Arbeid ({t.hours_total:g} u)", t.labour_cost),
+        *([(f"Verplaatsing ({result.travel.trips} × 2 × {result.travel.distance_km:g} km)", t.travel_cost)]
+          if result.travel else []),
         ("Subtotaal excl. btw", t.subtotal_excl),
         (f"Btw {t.vat_pct:g} %", t.vat),
         ("Totaal incl. btw", t.total_incl),

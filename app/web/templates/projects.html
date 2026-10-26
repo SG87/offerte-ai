@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Projecten · Offerte-AI{% endblock %}
+{% from "_address.html" import address_fields %}
 {% block content %}
 <div class="page-head">
   <div>
@@ -25,7 +26,7 @@
           <div class="field kind-set">
             {% for k, label in customer_kinds.items() %}<label><input type="radio" name="new_kind" value="{{ k }}" {{ 'checked' if loop.first else '' }}> {{ label }}</label>{% endfor %}
           </div>
-          <div class="field"><label class="lbl" for="new_address">Adres</label><input id="new_address" name="new_address"></div>
+          <fieldset class="field addr"><legend class="lbl">Adres</legend>{{ address_fields(none, 'new_', org.country) }}</fieldset>
           <div class="field"><label class="lbl" for="new_language">Taal van de offerte</label><select id="new_language" name="new_language">{% for k, v in languages.items() %}<option value="{{ k }}" {{ 'selected' if k == org.language else '' }}>{{ v }}</option>{% endfor %}</select></div>
           <div class="field b2b-only" hidden><label class="lbl" for="new_vat_number">Btw-nummer</label><input id="new_vat_number" name="new_vat_number" placeholder="BE0123456789"></div>
           <div class="field"><label class="lbl" for="new_email">E-mail</label><input id="new_email" name="new_email" type="email"></div>

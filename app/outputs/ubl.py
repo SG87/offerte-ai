@@ -9,6 +9,7 @@ import re
 import xml.etree.ElementTree as ET
 from datetime import date
 
+from app import address as addr
 from app.models import Invoice, Organisation
 
 NS = {
@@ -50,15 +51,10 @@ def endpoint(vat: str) -> tuple[str, str]:
 
 
 def split_address(address: str | None) -> dict[str, str]:
-    """'Kerkstraat 1, 2000 Antwerpen' -> street, postal code, city (best effort; the full text stays the street)."""
-    address = (address or "").strip()
-    if "," in address:
-        street, rest = address.rsplit(",", 1)
-        if m := re.match(r"^\s*(?:[A-Z]{1,2}-?)?(\d{4,5})\s+(.+)$", rest):
-            return {"street": street.strip(), "postal": m.group(1), "city": m.group(2).strip()}
-    if m := re.match(r"^(.*?)\s+(\d{4})\s+([^\d,]+)$", address):  # 'Kerkstraat 1 2000 Antwerpen'
-        return {"street": m.group(1).strip(), "postal": m.group(2), "city": m.group(3).strip()}
-    return {"street": address, "postal": "", "city": ""}
+    """'Kerkstraat 1, 2000 Antwerpen' -> street (with number), postal code, city (see app/address.py)."""
+    parts = addr.parse(address)
+    street = " ".join(p for p in (parts["street"], parts["house_number"]) if p)
+    return {"street": street, "postal": parts["postal_code"] or "", "city": parts["city"] or ""}
 
 
 def _party(parent: ET.Element, tag: str, name: str, address: str | None, vat: str, country: str, email: str | None) -> None:

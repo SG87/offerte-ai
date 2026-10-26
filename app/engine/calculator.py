@@ -4,7 +4,8 @@ Pipeline:
   1. apply adjustments (user's skill override) to a *copy* of params / posts / zones
   2. per zone in scope, per applicable post: measure -> quantity
   3. price: material (with waste + margin), labour (hours x rate, with height factor)
-  4. totals, VAT, rounding, assumptions -> QuoteResult
+  4. kilometre allowance: one return trip to the work site per km_hours_per_trip working hours
+  5. totals, VAT, rounding, assumptions -> QuoteResult
 """
 
 from __future__ import annotations
@@ -24,6 +25,7 @@ from app.schemas import (
     PriceConfig,
     QuoteResult,
     QuoteTotals,
+    Travel,
     Zone,
 )
 
@@ -108,6 +110,17 @@ def _round_up_to(value: float, step: float) -> float:
     return math.ceil(round(value / step, 6)) * step
 
 
+def travel_cost(config: PriceConfig, distance_km: float | None, hours_total: float) -> Travel | None:
+    """Trips = working hours / hours per trip, rounded up (at least one); each trip is there and back."""
+    if config.km_rate <= 0 or not distance_km or distance_km <= 0:
+        return None
+    per_trip = config.km_hours_per_trip
+    trips = max(1, math.ceil(round(hours_total / per_trip, 6))) if per_trip > 0 else 1
+    km_total = round(2 * distance_km * trips, 1)
+    return Travel(distance_km=distance_km, trips=trips, km_total=km_total, rate=config.km_rate,
+                  cost=round(km_total * config.km_rate, 2))
+
+
 def calculate_quote(
     geometry: Geometry,
     skill: Skill,
@@ -116,7 +129,9 @@ def calculate_quote(
     adjustments: list[Adjustment] | None = None,
     vat_pct: float | None = None,
     override_version: int | None = None,
+    distance_km: float | None = None,
 ) -> QuoteResult:
+    """distance_km: company -> work site, one way (for the kilometre allowance; None = unknown)."""
     adjustments = adjustments or []
     g, params, posts, hour_factors = apply_adjustments(geometry, skill, adjustments)
     vat = config.vat_pct if vat_pct is None else vat_pct
@@ -215,7 +230,11 @@ def calculate_quote(
     margin = material_cost * config.margin_pct / 100
     hours_total = _round_up_to(sum(line.hours for line in lines), config.round_hours_to)
     labour_cost = hours_total * config.hourly_rate
-    subtotal = material_cost + margin + labour_cost
+    travel = travel_cost(config, distance_km, hours_total) if lines else None
+    if config.km_rate > 0 and lines and distance_km is None:
+        warnings.append("Kilometervergoeding niet meegerekend: de afstand tot de werf is niet gekend. "
+                        "Vul ze in bij de meetstaat.")
+    subtotal = material_cost + margin + labour_cost + (travel.cost if travel else 0.0)
     vat_amount = subtotal * vat / 100
     area_total = sum(line.net_qty for line in lines if line.unit == "m2")
 
@@ -237,12 +256,14 @@ def calculate_quote(
             material_cost=round(material_cost, 2),
             margin=round(margin, 2),
             labour_cost=round(labour_cost, 2),
+            travel_cost=travel.cost if travel else 0.0,
             subtotal_excl=round(subtotal, 2),
             vat_pct=vat,
             vat=round(vat_amount, 2),
             total_incl=round(subtotal + vat_amount, 2),
             currency=config.currency,
         ),
+        travel=travel,
         assumptions=unique_assumptions,
         warnings=warnings,
         config_version=config.version,

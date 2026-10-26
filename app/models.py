@@ -9,6 +9,8 @@ from typing import Any
 
 from sqlmodel import Field, SQLModel
 
+from app.address import AddressMixin
+
 
 def _now() -> datetime:
     return datetime.now(UTC)
@@ -70,6 +72,11 @@ class Project(SQLModel, table=True):
     name: str
     client_name: str | None = None
     client_address: str | None = None
+    # road distance company -> work site, one way; drives the kilometre allowance on the quote
+    distance_km: float | None = None
+    distance_source: str | None = None  # route | postcode | manueel
+    distance_note: str | None = None
+    distance_key: str | None = None  # the addresses it was looked up for: other addresses -> look it up again
     work_type: str = "renovatie_woning_10j"  # drives VAT suggestion
     vat_pct: float = 6.0
     scope_json: str = '["muren", "plafonds"]'
@@ -202,7 +209,7 @@ class IntegrationEvent(SQLModel, table=True):
         return json.loads(self.payload_json)
 
 
-class Customer(SQLModel, table=True):
+class Customer(AddressMixin, SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     org_id: int = Field(index=True, foreign_key="organisation.id")
     name: str
@@ -211,7 +218,12 @@ class Customer(SQLModel, table=True):
     contact_name: str | None = None
     email: str | None = None
     phone: str | None = None
-    address: str | None = None
+    # address in parts (app/address.py); .address gives it on one line
+    street: str | None = None
+    house_number: str | None = None
+    postal_code: str | None = None
+    city: str | None = None
+    country: str | None = None  # ISO code (BE, NL, …)
     vat_number: str | None = None
     website: str | None = None
     notes: str | None = None
@@ -225,14 +237,19 @@ class Customer(SQLModel, table=True):
         return self.kind == "b2b"
 
 
-class Supplier(SQLModel, table=True):
+class Supplier(AddressMixin, SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     org_id: int = Field(index=True, foreign_key="organisation.id")
     name: str
     contact_name: str | None = None
     email: str | None = None  # orders go here
     phone: str | None = None
-    address: str | None = None
+    # address in parts (app/address.py); .address gives it on one line
+    street: str | None = None
+    house_number: str | None = None
+    postal_code: str | None = None
+    city: str | None = None
+    country: str | None = None  # ISO code (BE, NL, …)
     customer_number: str | None = None  # our account number at the supplier
     vat_number: str | None = None
     website: str | None = None

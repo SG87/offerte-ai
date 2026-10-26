@@ -49,14 +49,18 @@ def offer_lines(
                 amount=amount,
             )
         )
+    last = lines[-1] if lines else None
+    if tv := result.travel:
+        amount = round(tv.cost * factor, 2)
+        lines.append(OfferLine(t(lang, "verplaatsing", trips=tv.trips, km=_pct(tv.distance_km, lang)),
+                               tv.km_total, "km", amount / tv.km_total if tv.km_total else 0.0, amount))
     target = tot.total_incl if incl_vat else tot.subtotal_excl
     rest = round(target - sum(ln.amount for ln in lines), 2)
     # labour is priced per line; the rounding of total hours is a separate line when it differs
-    hours_rounding = round(tot.subtotal_excl - sum(line.line_total for line in result.lines), 2)
+    hours_rounding = round(tot.subtotal_excl - tot.travel_cost - sum(line.line_total for line in result.lines), 2)
     if abs(hours_rounding) >= 0.01:
         lines.append(OfferLine(t(lang, "afronding_uren"), None, "", None, rest))
-    elif lines and abs(rest) >= 0.005:
-        last = lines[-1]
+    elif last and abs(rest) >= 0.005:  # btw rounding goes into the last work line, not the travel line
         last.amount = round(last.amount + rest, 2)
         last.unit_price = last.amount / last.qty if last.qty else 0.0
     return lines

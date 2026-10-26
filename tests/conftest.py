@@ -10,6 +10,7 @@ os.environ["ANTHROPIC_API_KEY"] = ""  # overrides a key in .env
 for _var in ("OFFERTE_SMTP_HOST", "OFFERTE_SMTP_USER", "OFFERTE_SMTP_PASSWORD", "OFFERTE_SMTP_FROM",
              "OFFERTE_MAIL_REDIRECT_TO", "OFFERTE_WEBHOOK_URL", "OFFERTE_WEBHOOK_SECRET"):
     os.environ[_var] = ""  # never send real mail or webhooks from tests
+os.environ["OFFERTE_GEO_ENABLED"] = "false"  # no geocoding/routing calls from tests
 os.environ["OFFERTE_SECRET_KEY"] = "test-secret"
 os.environ["OFFERTE_MCP_ALLOWED_HOSTS"] = "testserver,localhost:*,127.0.0.1:*"
 

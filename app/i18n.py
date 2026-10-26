@@ -28,6 +28,11 @@ STRINGS: dict[str, dict[str, str]] = {
     "excl_btw": {"nl": "excl. btw", "fr": "HTVA", "en": "excl. VAT"},
     "lagen": {"nl": "{n} lagen", "fr": "{n} couches", "en": "{n} coats"},
     "afronding_uren": {"nl": "Afronding uren", "fr": "Arrondi des heures", "en": "Rounding of hours"},
+    "verplaatsing": {
+        "nl": "Verplaatsingskosten: {trips} × heen en terug {km} km",
+        "fr": "Frais de déplacement : {trips} × aller-retour {km} km",
+        "en": "Travel costs: {trips} × return trip of {km} km",
+    },
     "totaal_incl": {"nl": "Totaal incl. btw", "fr": "Total TVAC", "en": "Total incl. VAT"},
     "totaal_excl": {"nl": "Totaal excl. btw", "fr": "Total HTVA", "en": "Total excl. VAT"},
     "btw_pct": {"nl": "Btw {pct} %", "fr": "TVA {pct} %", "en": "VAT {pct} %"},

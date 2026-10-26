@@ -38,6 +38,12 @@
         <div><label class="lbl" for="vat_label">Btw-vermelding</label><input id="vat_label" name="vat_label" value="{{ cfg.vat_label }}"></div>
         <div><label class="lbl" for="validity_days">Geldigheid (dagen)</label><input id="validity_days" name="validity_days" value="{{ cfg.validity_days }}"></div>
       </div>
+      <h3 style="margin:20px 0 4px">Kilometervergoeding</h3>
+      <p class="muted small" style="margin:0 0 10px">Wordt een eigen post op de offerte: aantal verplaatsingen × heen en terug × afstand × tarief. De afstand over de weg van je bedrijfsadres{% if not org.address %} (<a href="/account">nog in te vullen</a>){% endif %} tot het werfadres berekenen we per project; je kan ze daar aanpassen. 0 = niet aanrekenen.</p>
+      <div class="grid">
+        <div><label class="lbl" for="km_rate">Tarief per km (excl. btw)</label><input id="km_rate" name="km_rate" value="{{ cfg.km_rate }}" inputmode="decimal"></div>
+        <div><label class="lbl" for="km_hours_per_trip">Werkuren per verplaatsing</label><input id="km_hours_per_trip" name="km_hours_per_trip" value="{{ cfg.km_hours_per_trip }}" inputmode="decimal" title="8 = één keer heen en terug per werkdag; 16 als je meestal met twee op de werf staat"></div>
+      </div>
       <p class="muted" style="font-size:13px;margin-top:10px">Importeren uit CSV / leverancierslijst en koppeling boekhouding: placeholders voor later.</p>
     </div>
     <div class="card">

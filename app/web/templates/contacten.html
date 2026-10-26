@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block title %}{{ kind.label }} · Offerte-AI{% endblock %}
+{% from "_address.html" import address_fields %}
 {% block watch %}kind:contact kind:import{% endblock %}
 {% block content %}
 <div class="page-head">
@@ -14,8 +15,18 @@
   <a href="/contacten/{{ key }}" class="{{ 'on' if key == kind_key else '' }}">{{ k.label }}</a>
   {% endfor %}
   {% if review_count or review_only %}<a href="/contacten/{{ kind_key }}?review={{ 0 if review_only else 1 }}" class="review-tab {{ 'on' if review_only else '' }}" title="Door AI ingevuld en nog niet gecontroleerd">{{ 'Toon alle' if review_only else 'Na te kijken' }}{% if not review_only %} <span class="count warn">{{ review_count }}</span>{% endif %}</a>{% endif %}
-  <a class="right small" href="/contacten/{{ kind_key }}?inactief={{ 0 if show_inactive else 1 }}">{{ 'verberg gearchiveerde' if show_inactive else 'toon gearchiveerde' }}</a>
+  <a class="right small" href="/contacten/{{ kind_key }}?inactief={{ 0 if show_inactive else 1 }}">{{ 'verberg gearchiveerde' if show_inactive else 'toon gearchiveerde' }}{% if archived_count %} ({{ archived_count }}){% endif %}</a>
 </nav>
+
+{% if show_inactive and archived_count and ai_kind %}
+<details class="refuse empty-archive">
+  <summary class="btn sm ghost danger">Archief leegmaken…</summary>
+  <form method="post" action="/contacten/{{ kind_key }}/archief-leegmaken" class="refuse-form">
+    <span class="small">De {{ archived_count }} gearchiveerde {{ kind.label|lower }} worden definitief verwijderd. Wie nog bij een {{ 'project of factuur' if kind_key == 'klanten' else 'voorraadpost of bestelling' }} hoort, blijft in het archief.</span>
+    <button class="btn sm danger-solid" type="submit">Ja, verwijder ze</button>
+  </form>
+</details>
+{% endif %}
 
 {% if busy %}
 <div class="ai-working"><span class="ring"></span><div><strong>AI is bezig</strong><span class="muted small">{{ busy|map(attribute='title')|join(' · ') }}. De lijst ververst vanzelf.</span></div></div>
@@ -100,6 +111,8 @@
           </fieldset>
           {% elif ftype == 'checkbox' %}
           <label class="switch {{ 'on' if val else '' }}"><input type="checkbox" name="{{ name }}" {{ 'checked' if val else '' }}> {{ label }}</label>
+          {% elif ftype == 'address' %}
+          <fieldset class="addr"><legend class="lbl">{{ label }}</legend>{{ address_fields(editing.address_parts if editing else none, '', defaults.country) }}</fieldset>
           {% else %}
           <label class="lbl" for="f_{{ name }}">{{ label }}</label>
           {% if ftype == 'textarea' %}<textarea id="f_{{ name }}" name="{{ name }}" rows="3">{{ val or '' }}</textarea>

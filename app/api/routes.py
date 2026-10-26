@@ -11,7 +11,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, EmailStr, Field
 from sqlmodel import Session, select
 
-from app import ai_jobs, invoicing, services, todos, workflow
+from app import address, ai_jobs, invoicing, services, todos, workflow
 from app import planning as planning_mod
 from app.ai.client import AIUnavailable
 from app.db import get_session
@@ -115,6 +115,7 @@ def _customer_out(c: Customer) -> dict:
         "email": c.email,
         "phone": c.phone,
         "address": c.address,
+        **c.address_parts,
         "vat_number": c.vat_number,
         "active": c.active,
     }
@@ -127,7 +128,12 @@ class CustomerIn(BaseModel):
     contact_name: str | None = None
     email: str | None = None
     phone: str | None = None
-    address: str | None = None
+    street: str | None = None
+    house_number: str | None = None
+    postal_code: str | None = None
+    city: str | None = None
+    country: str | None = Field(None, description="ISO-code, bv. BE")
+    address: str | None = Field(None, description="adres op één regel, als alternatief voor de onderdelen")
     vat_number: str | None = None
     notes: str | None = None
 
@@ -142,7 +148,9 @@ def list_customers(org: Organisation = Depends(require_org), session: Session = 
 def create_customer(
     body: CustomerIn, org: Organisation = Depends(require_org), session: Session = Depends(get_session)
 ):
-    c = Customer(org_id=org.id, **body.model_dump(exclude={"language"}), language=body.language or org.language)
+    data = body.model_dump(exclude={"language", "address", *address.PARTS})
+    parts = services.address_from_input(body.address, body.model_dump(include=set(address.PARTS)))
+    c = Customer(org_id=org.id, **data, **parts, language=body.language or org.language)
     c.vat_number = re.sub(r"[\s.]", "", c.vat_number or "").upper() or None
     session.add(c)
     session.commit()

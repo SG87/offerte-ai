@@ -368,7 +368,16 @@
         <div class="{{ 'hl' if incl_vat else '' }}"><span>Incl. btw</span><strong id="kpi-total_incl" data-fmt="eur">{{ result.totals.total_incl|eur }}</strong></div>
       </div>
       <p class="notice small live-note" id="live-note" hidden>Live berekend uit de zones die je aan het bewerken bent; nog niet bewaard.</p>
-      <p class="muted small" style="margin:0 0 10px">Materiaal {{ result.totals.material_cost|eur }} · arbeid {{ result.totals.labour_cost|eur }}</p>
+      <p class="muted small" style="margin:0 0 10px">Materiaal {{ result.totals.material_cost|eur }} · arbeid {{ result.totals.labour_cost|eur }}{% if result.travel %} · verplaatsing {{ result.totals.travel_cost|eur }} ({{ result.travel.trips }} × heen en terug){% endif %}</p>
+      {% if km_rate %}
+      <form class="dist-form small" method="post" action="/projects/{{ project.id }}/afstand">
+        <label for="distance_km">Afstand tot de werf (enkel)</label>
+        <input id="distance_km" name="distance_km" value="{{ project.distance_km|qty if project.distance_km is not none else '' }}" inputmode="decimal" placeholder="?"> km
+        <button class="btn sm" type="submit">Bewaar</button>
+        {% if project.distance_source == 'manueel' or project.distance_km is none %}<button class="btn sm ghost" type="submit" name="opnieuw" value="1">Bereken opnieuw</button>{% endif %}
+        {% if project.distance_note %}<span class="muted">{{ project.distance_note }}</span>{% endif %}
+      </form>
+      {% endif %}
       <details class="lines">
         <summary>{{ result.lines|length }} meetstaatregels</summary>
         <div class="scroll">

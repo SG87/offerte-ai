@@ -90,6 +90,7 @@ def project_details(session: Session, org: Organisation, project_id: int) -> dic
     return {
         **_project_row(p),
         "werfadres": p.client_address,
+        "afstand_werf_km": p.distance_km,
         "klant": {"naam": customer.name, "type": customer.kind, "taal": customer.language} if customer else None,
         "scope": p.scope,
         "btw_pct": p.vat_pct,

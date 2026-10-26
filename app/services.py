@@ -10,6 +10,7 @@ from pathlib import Path
 
 from sqlmodel import Session, select
 
+from app import address as addr
 from app import ai_jobs, branding, i18n, planning, workflow
 from app.ai.client import AIUnavailable
 from app.ai.company_lookup import lookup_company
@@ -20,6 +21,7 @@ from app.config import get_settings
 from app.db import session_scope
 from app.engine import calculate_quote, load_skill
 from app.engine.geometry import wall_net
+from app.integrations import geo
 from app.models import (
     ConfigVersion,
     Customer,
@@ -286,9 +288,11 @@ def resolve_customer(
     phone: str | None = None,
     contact_name: str | None = None,
     language: str | None = None,
+    **address_parts: str | None,
 ) -> Customer:
     """The customer with this id; else the one with this name (case-insensitive); else a new one.
-    Neither an id nor a name -> CustomerRequired."""
+    A new customer's address comes from the parts (street, house_number, postal_code, city, country) and/or
+    `address` on one line. Neither an id nor a name -> CustomerRequired."""
     if customer_id is not None:
         customer = get_customer(session, org, customer_id)
         if customer is None:
@@ -305,7 +309,7 @@ def resolve_customer(
         org_id=org.id,
         name=name,
         kind=kind if kind in CUSTOMER_KINDS else ("b2b" if vat_number else "b2c"),
-        address=(address or "").strip() or None,
+        **address_from_input(address, address_parts),
         vat_number=re.sub(r"[\s.]", "", vat_number or "").upper() or None,
         email=(email or "").strip() or None,
         phone=(phone or "").strip() or None,
@@ -316,6 +320,16 @@ def resolve_customer(
     session.commit()
     session.refresh(customer)
     return customer
+
+
+def address_from_input(line: str | None = None, parts: dict | None = None) -> dict[str, str | None]:
+    """Address parts typed in a form or API call (a line is split; given parts win), completed where the
+    postcode list leaves no doubt."""
+    found = addr.parse(line)
+    for k in addr.PARTS:
+        if (v := ((parts or {}).get(k) or "").strip()):
+            found[k] = v
+    return addr.complete(found)[0]
 
 
 def project_customer(session: Session, project: Project) -> Customer | None:
@@ -690,15 +704,63 @@ def preview_quote(
     if not geometry.zones:
         return None
     adjustments, override_version = current_adjustments(session, org)
+    config = current_config(session, org)
     return calculate_quote(
         geometry,
         load_skill(org.sector),
-        current_config(session, org),
+        config,
         scope=project.scope,
         adjustments=adjustments,
         vat_pct=project.vat_pct,
         override_version=override_version,
+        distance_km=project_distance(session, org, project, config),
     )
+
+
+def project_distance(
+    session: Session, org: Organisation, project: Project, config: PriceConfig | None = None
+) -> float | None:
+    """Road distance company -> work site (one way, km) for the kilometre allowance. Looked up once per pair of
+    addresses and kept on the project, like a distance the user typed, until one of the addresses changes.
+    Not looked up while km_rate is 0."""
+    config = config or current_config(session, org)
+    if config.km_rate <= 0:
+        return project.distance_km
+    key = _distance_key(org, project)
+    if project.distance_key != key:
+        if not org.address:
+            km, source, note = None, None, "Vul het adres van je bedrijf in (Account) om de afstand te berekenen."
+        elif not project.client_address:
+            km, source, note = None, None, "Het project heeft geen werfadres."
+        elif found := geo.road_distance(org.address, project.client_address, org.country):
+            km, source, note = found.km, found.source, found.note
+        else:
+            km, source, note = None, None, "Afstand niet automatisch gevonden; vul ze zelf in."
+        project.distance_km, project.distance_source, project.distance_note = km, source, note
+        project.distance_key = key
+        session.add(project)
+        session.commit()
+    return project.distance_km
+
+
+def _distance_key(org: Organisation, project: Project) -> str:
+    return f"{org.address or ''}|{project.client_address or ''}"
+
+
+def set_distance(session: Session, org: Organisation, project: Project, km: float | None) -> Project:
+    """A distance typed by the user (km, one way); None = look it up again."""
+    if km is None:
+        project.distance_source = project.distance_key = None
+        session.add(project)
+        session.commit()
+        project_distance(session, org, project)
+    else:
+        project.distance_km, project.distance_source = round(max(km, 0.0), 1), "manueel"
+        project.distance_note, project.distance_key = "zelf ingevuld", _distance_key(org, project)
+        session.add(project)
+        session.commit()
+    session.refresh(project)
+    return project
 
 
 def wall_areas(org: Organisation, geometry: Geometry) -> dict[str, float]:
@@ -744,6 +806,7 @@ def run_quote(
         adjustments=adjustments,
         vat_pct=project.vat_pct,
         override_version=override_version,
+        distance_km=project_distance(session, org, project, config),
     )
     prev = latest_quote(session, project)
     quote = Quote(

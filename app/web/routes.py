@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from fastapi.templating import Jinja2Templates
 from sqlmodel import Session, select
 
-from app import ai_jobs, branding, i18n, invoicing, services, todos, workflow
+from app import address, ai_jobs, branding, i18n, invoicing, services, todos, workflow
 from app import planning as planning_mod
 from app.config import get_settings
 from app.db import get_session
@@ -28,6 +28,7 @@ templates.env.filters["eur"] = lambda v: f"€ {v:,.2f}".replace(",", "X").repla
 templates.env.filters["qty"] = lambda v: f"{v:g}".replace(".", ",")
 STATIC_DIR = Path(__file__).parent / "static"
 # cache-busting: the stylesheet URL changes whenever the file does
+templates.env.globals["countries"] = address.COUNTRIES
 templates.env.globals["asset_v"] = lambda name: int((STATIC_DIR / name).stat().st_mtime)
 
 
@@ -265,6 +266,8 @@ async def config_post(
         vat_label=form.get("vat_label", cfg.vat_label),
         validity_days=int(_f(form.get("validity_days"), cfg.validity_days)),
         round_hours_to=cfg.round_hours_to,
+        km_rate=max(0.0, _f(form.get("km_rate"), cfg.km_rate)),
+        km_hours_per_trip=max(0.0, _f(form.get("km_hours_per_trip"), cfg.km_hours_per_trip)),
         items=items,
     )
     row = services.save_config(session, org, new_cfg)
@@ -352,7 +355,7 @@ def _customer_from_form(session: Session, org: Organisation, form) -> Customer:
             org,
             name=form.get("new_name"),
             kind=form.get("new_kind") or "b2c",
-            address=form.get("new_address"),
+            **{k: form.get(f"new_{k}") for k in address.PARTS},
             vat_number=form.get("new_vat_number"),
             email=form.get("new_email"),
             language=form.get("new_language"),
@@ -481,7 +484,32 @@ def project_page(
         customer=customer,
         incl_vat=services.prices_incl_vat(customer),
         customers=_active_customers(session, org),
+        km_rate=services.current_config(session, org).km_rate,
     )
+
+
+@router.post("/projects/{project_id}/afstand")
+async def project_distance_post(
+    project_id: int,
+    request: Request,
+    org: Organisation | None = Depends(current_org),
+    session: Session = Depends(get_session),
+):
+    """Distance to the work site for the kilometre allowance: typed by hand, or looked up again."""
+    if r := _require(request, org):
+        return r
+    p = services.get_project(session, org, project_id)
+    if not p:
+        return RedirectResponse("/projects", status_code=303)
+    form = await request.form()
+    km = None if form.get("opnieuw") else _f(form.get("distance_km"), None)
+    services.set_distance(session, org, p, km)
+    if p.distance_km is not None:
+        km_text = f"{p.distance_km:g}".replace(".", ",")
+        _flash(request, f"Afstand tot de werf: {km_text} km ({p.distance_note}). Herbereken de offerte om ze mee te nemen.")
+    else:
+        _flash(request, p.distance_note or "Afstand niet gevonden; vul ze zelf in.")
+    return RedirectResponse(f"/projects/{project_id}", status_code=303)
 
 
 @router.post("/projects/{project_id}/plan")

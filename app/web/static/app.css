@@ -601,3 +601,12 @@ a.tag{text-decoration:none}
   .lane{scroll-snap-align:start}
   .card{padding:18px;border-radius:16px}
 }
+/* address in parts (_address.html) */
+.addr-grid{display:grid;grid-template-columns:104px 1fr 1fr 104px;grid-template-areas:"street street street nr" "pc city city city" "country country . .";gap:10px 10px}
+.addr-grid .lbl{font-size:12px;margin-bottom:4px}
+.addr-grid .a-street{grid-area:street}.addr-grid .a-nr{grid-area:nr}.addr-grid .a-pc{grid-area:pc}.addr-grid .a-city{grid-area:city}.addr-grid .a-country{grid-area:country}
+.addr legend{margin-bottom:8px}
+/* kilometre allowance: distance to the work site on the project page */
+.dist-form{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;margin:0 0 10px}
+.dist-form input{width:90px;min-height:32px;padding:4px 10px;font-size:14px}
+.empty-archive{margin:0 0 14px}

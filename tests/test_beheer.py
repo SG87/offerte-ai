@@ -22,7 +22,9 @@ def test_contacts_crud_and_employee_absence_blocks_planning(client):
     jan = next(i for i in range(1, 50) if f"/contacten/werknemers/{i}" in page and "Jan Janssens" in client.get(f"/contacten/werknemers/{i}").text)
     # supplier + customer
     client.post("/contacten/leveranciers", data={"name": "Verf & Co", "email": "orders@verf.test", "lead_days": "2"})
-    client.post("/contacten/klanten", data={"name": "Fam. De Smet", "address": "Kerkstraat 1, 2000 Antwerpen"})
+    r = client.post("/contacten/klanten", data={"name": "Fam. De Smet", "street": "Kerkstraat", "house_number": "1",
+                                                "postal_code": "2000", "country": "BE"}, follow_redirects=True)
+    assert "Aangevuld: gemeente Antwerpen uit postcode 2000" in r.text  # the town follows from the postcode
     assert "Verf &amp; Co" in client.get("/contacten/leveranciers").text
     assert "Fam. De Smet" in client.get("/contacten/klanten").text
 
@@ -37,7 +39,7 @@ def test_contacts_crud_and_employee_absence_blocks_planning(client):
     cid = re.search(r"/contacten/klanten\?edit=(\d+)", client.get("/contacten/klanten").text).group(1)
     r = client.post("/projects", data={"name": "Gevel De Smet", "customer_id": str(cid), "scope": ["muren"]}, follow_redirects=False)
     pid = r.headers["location"].rsplit("/", 1)[-1]
-    assert "Kerkstraat 1" in client.get(f"/projects/{pid}").text or True  # address lives on the project
+    assert "werf: Kerkstraat 1, 2000 Antwerpen" in client.get(f"/projects/{pid}").text  # the customer's address
     page = client.get(f"/planning?dag={monday}").text
     assert "afwezig" in page and "Jan Janssens" in page
     r = client.post("/planning/items", data={"project_id": pid, "date_from": monday.isoformat(), "date_to": monday.isoformat(),

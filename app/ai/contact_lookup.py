@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import re
 
+from app import address
 from app.ai.client import AIUnavailable, ask_json, ask_json_with_tools, text_block
 from app.ai.company_lookup import (
     FREE_MAIL_DOMAINS,
@@ -41,7 +42,8 @@ SYSTEM = (
     "kandidaten met dezelfde naam, of enkel een naam zonder plaats en geen duidelijke treffer = hooguit 0.5.\n"
     "Antwoord als laatste met enkel JSON:\n"
     '{{"name": str|null, "contact_name": str|null, "email": str|null, "phone": str|null, '
-    '"address": "Straat nr, postcode gemeente"|null, "vat_number": str|null, "website": str|null, '
+    '"street": "straatnaam zonder nummer"|null, "house_number": str|null, "postal_code": str|null, '
+    '"city": str|null, "country": "ISO-landcode, bv. BE"|null, "vat_number": str|null, "website": str|null, '
     '"kind": "b2b"|"b2c", "language": "nl"|"fr"|"en", "is_private_person": bool, '
     '"confidence": 0..1, "evidence": "<1 zin: waar je de gegevens vond>"}}'
 )
@@ -52,7 +54,7 @@ SEARCH = (
 )
 NO_SEARCH = "Je hebt geen zoektools: gebruik enkel wat je krijgt. "
 
-FIELDS = ("name", "contact_name", "email", "phone", "address", "vat_number", "website")
+FIELDS = ("name", "contact_name", "email", "phone", *address.PARTS, "vat_number", "website")
 
 
 def _name_from_email(email: str) -> str:
@@ -97,7 +99,8 @@ def lookup_contact(query: str, kind: str = "supplier", country: str = "BE", use_
         if raw_html:
             text = html_to_text(raw_html, limit=6000)
             found = heuristic_extract(text, raw_html)
-            result.update({k: v for k, v in found.items() if v and k != "company_name"})
+            found.update({k: v for k, v in address.parse(found.pop("address", None)).items() if v})
+            result.update({k: v for k, v in found.items() if v and k in FIELDS})
             result["name"] = found.get("company_name") or result["name"]
             result["website"] = url
             result["kind"] = "b2b"
@@ -125,10 +128,12 @@ def lookup_contact(query: str, kind: str = "supplier", country: str = "BE", use_
         return _clean(result)
     if not isinstance(raw, dict):
         return _clean(result)
+    if isinstance(raw.get("address"), str):  # on one line after all
+        raw = {**{k: v for k, v in address.parse(raw["address"]).items() if v}, **raw}
     for key in FIELDS:
         value = raw.get(key)
-        if isinstance(value, str) and value.strip():
-            result[key] = value.strip()
+        if isinstance(value, (str, int)) and str(value).strip():
+            result[key] = str(value).strip()
     if email:  # the address the user typed wins over what the web says
         result["email"] = email
     result["kind"] = raw.get("kind") if raw.get("kind") in ("b2b", "b2c") else result["kind"]
@@ -144,6 +149,8 @@ def lookup_contact(query: str, kind: str = "supplier", country: str = "BE", use_
 
 
 def _clean(result: dict) -> dict:
+    parts, _, result["address_issues"] = address.complete(result)
+    result.update(parts)
     result["vat_number"] = normalize_vat(result.get("vat_number"))
     if result.get("email") and not EMAIL_RE.match(result["email"]):
         result["email"] = None

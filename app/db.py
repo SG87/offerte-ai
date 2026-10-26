@@ -29,6 +29,32 @@ def init_db() -> None:
     SQLModel.metadata.create_all(engine)
     _add_missing_columns(engine)
     _map_legacy_statuses(engine)
+    _split_legacy_addresses(engine)
+
+
+def _split_legacy_addresses(engine) -> None:
+    """v0.1 kept a customer's or supplier's address on one line (column 'address', no longer mapped): split it
+    into street, house number, postcode, city and country. The old column is left as it was; a row whose street
+    is still that whole line (nothing else filled in) is split again."""
+    from app import address
+
+    insp = inspect(engine)
+    with engine.begin() as conn:
+        for table in ("customer", "supplier"):
+            if not insp.has_table(table) or "address" not in {c["name"] for c in insp.get_columns(table)}:
+                continue
+            rows = conn.execute(text(
+                f"SELECT id, address FROM {table} WHERE address IS NOT NULL AND address != '' "
+                "AND (street IS NULL OR street = address) AND house_number IS NULL AND postal_code IS NULL "
+                "AND city IS NULL"
+            )).all()
+            for row_id, line in rows:
+                parts, _, _ = address.complete(address.parse(line))
+                conn.execute(
+                    text(f"UPDATE {table} SET street = :street, house_number = :house_number, "
+                         "postal_code = :postal_code, city = :city, country = :country WHERE id = :id"),
+                    {**parts, "id": row_id},
+                )
 
 
 def _map_legacy_statuses(engine) -> None:

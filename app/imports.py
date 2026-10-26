@@ -16,7 +16,7 @@ from typing import Any
 
 from sqlmodel import Session, select
 
-from app import ai_jobs, services
+from app import address, ai_jobs, services
 from app.ai import import_mapping as im
 from app.ai.contact_lookup import lookup_contact
 from app.engine import load_skill
@@ -26,13 +26,14 @@ from app.models import Customer, Organisation, StockImportRow, Supplier
 MODELS: dict[str, type] = {"leveranciers": Supplier, "klanten": Customer}
 SINGULAR = {"leveranciers": "leverancier", "klanten": "klant"}
 CONTACT_FIELDS = {
-    "leveranciers": ["name", "contact_name", "email", "phone", "address", "vat_number", "website",
+    "leveranciers": ["name", "contact_name", "email", "phone", *address.PARTS, "vat_number", "website",
                      "customer_number", "lead_days", "notes"],
-    "klanten": ["name", "kind", "language", "contact_name", "email", "phone", "address", "vat_number", "website",
-                "notes"],
+    "klanten": ["name", "kind", "language", "contact_name", "email", "phone", *address.PARTS, "vat_number",
+                "website", "notes"],
 }
 LABELS = {"name": "naam", "contact_name": "contactpersoon", "email": "e-mail", "phone": "telefoon",
-          "address": "adres", "vat_number": "btw-nummer", "website": "website", "customer_number": "klantnummer",
+          "street": "straat", "house_number": "huisnummer", "postal_code": "postcode", "city": "gemeente",
+          "country": "land", "vat_number": "btw-nummer", "website": "website", "customer_number": "klantnummer",
           "lead_days": "levertermijn", "kind": "type klant", "language": "taal", "notes": "notities"}
 # a field still at its model default on an existing record may be replaced by imported data
 DEFAULTED = {"lead_days": 3}
@@ -63,8 +64,9 @@ def _flag(row, note: str) -> None:
 def apply_contact(
     session: Session, org: Organisation, kind_key: str, data: dict, source: str, row=None
 ) -> tuple[Any, str, bool]:
-    """Create or complete one supplier/customer.
-    Returns (row, 'nieuw' | 'bijgewerkt' | 'ongewijzigd', flagged now as na te kijken)."""
+    """Create or complete one supplier/customer. An archived match comes back out of the archive: importing or
+    looking it up again means it is wanted. Returns (row, 'nieuw' | 'teruggehaald' | 'bijgewerkt' |
+    'ongewijzigd', flagged now as na te kijken)."""
     model = MODELS[kind_key]
     fields = CONTACT_FIELDS[kind_key]
     row = row or find_existing(session, org, model, data.get("email"), data.get("name"))
@@ -98,12 +100,34 @@ def apply_contact(
             issues.append("wijkt af van wat al bewaard was: " + ", ".join(conflicts))
             confident = False
         state = "bijgewerkt" if changed else "ongewijzigd"
+        if not row.active:
+            row.active = True
+            state = "teruggehaald"
     if not confident:
         _flag(row, f"{source}: " + ("; ".join(issues) if issues else "AI was niet zeker"))
     session.add(row)
     session.commit()
     session.refresh(row)
     return row, state, not confident
+
+
+def empty_archive(session: Session, org: Organisation, kind_key: str) -> tuple[int, int]:
+    """Delete the archived suppliers/customers. One still used by a project or invoice (customer), or by stock or
+    an order (supplier), stays archived. Returns (deleted, kept)."""
+    from app.models import Invoice, Project, PurchaseOrder, StockLevel
+
+    model = MODELS[kind_key]
+    used_by = [(Project, Project.customer_id), (Invoice, Invoice.customer_id)] if model is Customer else [
+        (StockLevel, StockLevel.supplier_id), (PurchaseOrder, PurchaseOrder.supplier_id)]
+    deleted = kept = 0
+    for row in session.exec(select(model).where(model.org_id == org.id, model.active == False)).all():  # noqa: E712
+        if any(session.exec(select(m.id).where(col == row.id)).first() for m, col in used_by):
+            kept += 1
+        else:
+            session.delete(row)
+            deleted += 1
+    session.commit()
+    return deleted, kept
 
 
 # ---------- one contact by name or e-mail ----------
@@ -128,12 +152,14 @@ def start_lookup(session: Session, org: Organisation, kind_key: str, query: str,
             issues.append("particulier: niet opgezocht, vul zelf aan")
         if found["confidence"] < im.CONFIDENT and found.get("evidence"):
             issues.append(found["evidence"])
+        issues += found.get("address_issues") or []
         data = {**found, "issues": issues}
         if kind_key == "leveranciers":
             data.pop("kind", None)
             data.pop("language", None)
         row, state, _ = apply_contact(session, org, kind_key, data, "AI-opzoeking", row=existing)
-        verb = {"nieuw": "toegevoegd", "bijgewerkt": "aangevuld", "ongewijzigd": "niets nieuws gevonden"}[state]
+        verb = {"nieuw": "toegevoegd", "teruggehaald": "uit het archief teruggehaald", "bijgewerkt": "aangevuld",
+                "ongewijzigd": "niets nieuws gevonden"}[state]
         return (f"{row.name}: {verb}" + (" — na te kijken." if row.needs_review else "."),
                 f"/contacten/{kind_key}?edit={row.id}")
 
@@ -148,8 +174,9 @@ def start_contact_import(session: Session, org: Organisation, kind_key: str, fil
 
     def work(session: Session, org: Organisation, job) -> tuple[str, str | None]:
         records, skipped, method = im.map_contacts(sheets, kind_key)
-        counts = {"nieuw": 0, "bijgewerkt": 0, "ongewijzigd": 0}
+        counts = {"nieuw": 0, "teruggehaald": 0, "bijgewerkt": 0, "ongewijzigd": 0}
         review = 0
+        completed = sum(1 for rec in records if rec.get("filled"))
         for rec in records:
             src = f"import {filename}" + (f" rij {rec['row']}" if rec.get("row") else "")
             if method != "ai":
@@ -158,8 +185,12 @@ def start_contact_import(session: Session, org: Organisation, kind_key: str, fil
             counts[state] += 1
             review += flagged
         parts = [f"{counts['nieuw']} nieuw", f"{counts['bijgewerkt']} aangevuld"]
+        if counts["teruggehaald"]:
+            parts.append(f"{counts['teruggehaald']} uit het archief teruggehaald")
         if counts["ongewijzigd"]:
             parts.append(f"{counts['ongewijzigd']} al aanwezig")
+        if completed:
+            parts.append(f"{completed} adres{'' if completed == 1 else 'sen'} aangevuld (postcode, gemeente of land)")
         if review:
             parts.append(f"{review} na te kijken")
         if skipped:

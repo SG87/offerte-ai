@@ -1,0 +1,16 @@
+{# Address in parts. `values` has street, house_number, postal_code, city, country; `prefix` goes before each field name. #}
+{% macro address_fields(values, prefix='', default_country='BE') %}
+{% set v = values or {} %}
+{% set cur = v.country or default_country %}
+<div class="addr-grid">
+  <div class="a-street"><label class="lbl" for="{{ prefix }}street">Straat</label><input id="{{ prefix }}street" name="{{ prefix }}street" value="{{ v.street or '' }}" autocomplete="address-line1"></div>
+  <div class="a-nr"><label class="lbl" for="{{ prefix }}house_number">Nr.</label><input id="{{ prefix }}house_number" name="{{ prefix }}house_number" value="{{ v.house_number or '' }}" placeholder="12 bus 3"></div>
+  <div class="a-pc"><label class="lbl" for="{{ prefix }}postal_code">Postcode</label><input id="{{ prefix }}postal_code" name="{{ prefix }}postal_code" value="{{ v.postal_code or '' }}" autocomplete="postal-code"></div>
+  <div class="a-city"><label class="lbl" for="{{ prefix }}city">Gemeente</label><input id="{{ prefix }}city" name="{{ prefix }}city" value="{{ v.city or '' }}" autocomplete="address-level2"></div>
+  <div class="a-country"><label class="lbl" for="{{ prefix }}country">Land</label>
+    <select id="{{ prefix }}country" name="{{ prefix }}country">
+      {% for code, name in countries.items() %}<option value="{{ code }}" {{ 'selected' if code == cur else '' }}>{{ name }}</option>{% endfor %}
+      {% if cur and cur not in countries %}<option value="{{ cur }}" selected>{{ cur }}</option>{% endif %}
+    </select></div>
+</div>
+{% endmacro %}

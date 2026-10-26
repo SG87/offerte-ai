@@ -94,6 +94,9 @@ class PriceConfig(BaseModel):
     vat_label: str = "Btw 21 %"
     validity_days: int = 30
     round_hours_to: float = 0.5
+    # kilometre allowance: (distance to the work site × 2) per trip × rate; 0 = not charged
+    km_rate: float = 0.0  # € per km, excl. btw
+    km_hours_per_trip: float = 8.0  # working hours per trip (one return trip per working day = 8)
     items: list[PriceItem] = Field(default_factory=list)
 
     def item(self, code: str) -> PriceItem | None:
@@ -155,6 +158,7 @@ class QuoteTotals(BaseModel):
     material_cost: float
     margin: float
     labour_cost: float
+    travel_cost: float = 0.0  # kilometre allowance, see Travel
     subtotal_excl: float
     vat_pct: float
     vat: float
@@ -162,10 +166,21 @@ class QuoteTotals(BaseModel):
     currency: str = "EUR"
 
 
+class Travel(BaseModel):
+    """Kilometre allowance on a quote: trips × (distance × 2) × rate."""
+
+    distance_km: float  # company -> work site, one way
+    trips: int
+    km_total: float
+    rate: float  # € per km, excl. btw
+    cost: float  # excl. btw
+
+
 class QuoteResult(BaseModel):
     sector: str
     lines: list[MeetstaatLine]
     totals: QuoteTotals
+    travel: Travel | None = None
     assumptions: list[Assumption]
     warnings: list[str] = Field(default_factory=list)
     config_version: int

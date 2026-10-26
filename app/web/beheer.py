@@ -11,7 +11,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Request, Up
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlmodel import Session, select
 
-from app import ai_jobs, imports, planning, services, todos, workflow
+from app import address, ai_jobs, imports, planning, services, todos, workflow
 from app.ai import import_mapping
 from app.db import get_session
 from app.engine import load_skill
@@ -82,7 +82,7 @@ KINDS: dict[str, Kind] = {
             ("contact_name", "Contactpersoon", "text"),
             ("email", "E-mail", "email"),
             ("phone", "Telefoon", "tel"),
-            ("address", "Adres", "text"),
+            ("address", "Adres", "address"),
             ("vat_number", "Btw-nummer", "text"),
             ("website", "Website", "url"),
             ("notes", "Notities", "textarea"),
@@ -101,7 +101,7 @@ KINDS: dict[str, Kind] = {
             ("contact_name", "Contactpersoon", "text"),
             ("email", "E-mail voor bestellingen", "email"),
             ("phone", "Telefoon", "tel"),
-            ("address", "Adres", "text"),
+            ("address", "Adres", "address"),
             ("vat_number", "Btw-nummer", "text"),
             ("website", "Website", "url"),
             ("customer_number", "Ons klantnummer", "text"),
@@ -189,9 +189,12 @@ def contacten(
         editing=editing,
         review_only=bool(review),
         review_count=_review_count(session, org, kind),
+        archived_count=len(session.exec(select(kind.model.id).where(
+            kind.model.org_id == org.id, kind.model.active == False)).all()),  # noqa: E712
         ai_kind=kind_key in imports.MODELS,
         busy=ai_jobs.running(session, org, kind="contact") + ai_jobs.running(session, org, kind="import"),
-        defaults={**kind.defaults, **({"language": org.language} if kind.model is Customer else {})},
+        defaults={**kind.defaults, **({"language": org.language} if kind.model is Customer else {}),
+                  "country": org.country},
         show_inactive=bool(inactief),
         color_of=planning.employee_color,
     )
@@ -212,9 +215,16 @@ async def contacten_post(
     if row and row.org_id != org.id:
         row = None
     row = row or kind.model(org_id=org.id, name="", **kind.defaults)
+    notes = []
     for spec in kind.fields:
         name, ftype = spec[0], spec[2]
         raw = form.get(name)
+        if ftype == "address":  # street, house_number, postal_code, city, country
+            parts, filled, issues = address.complete({k: form.get(k) for k in address.PARTS})
+            row.set_address(parts)
+            notes += [f"aangevuld: {', '.join(filled)}"] if filled else []
+            notes += [f"controleer het adres: {'; '.join(issues)}"] if issues else []
+            continue
         if ftype == "checkboxes":  # several choices, stored as JSON in <name>_json; disabled options can't be chosen
             allowed = [o[0] for o in spec[4] if not (len(o) > 2 and o[2])]
             values = [v for v in allowed if v in form.getlist(name)] or allowed[:1]
@@ -241,7 +251,7 @@ async def contacten_post(
         row.needs_review, row.review_note = False, None
     session.add(row)
     session.commit()
-    _flash(request, f"{kind.singular} bewaard.")
+    _flash(request, f"{kind.singular} bewaard." + (" " + ". ".join(n[0].upper() + n[1:] for n in notes) + "." if notes else ""))
     return RedirectResponse(f"/contacten/{kind_key}", status_code=303)
 
 
@@ -312,6 +322,26 @@ async def contacten_import(
     job, work = imports.start_contact_import(session, org, kind_key, name, sheets)
     background.add_task(ai_jobs.run, job.id, work)
     _ai_started(request, f"We lezen {name} in")
+    return RedirectResponse(f"/contacten/{kind_key}", status_code=303)
+
+
+@router.post("/contacten/{kind_key}/archief-leegmaken")
+def contacten_empty_archive(
+    request: Request,
+    kind_key: str,
+    org: Organisation | None = Depends(current_org),
+    session: Session = Depends(get_session),
+):
+    if r := _require(request, org):
+        return r
+    if kind_key not in imports.MODELS:
+        return RedirectResponse(f"/contacten/{kind_key}", status_code=303)
+    deleted, kept = imports.empty_archive(session, org, kind_key)
+    label = KINDS[kind_key].label.lower()
+    msg = f"Archief leeggemaakt: {deleted} {label} verwijderd."
+    if kept:
+        msg += f" {kept} bleven in het archief omdat er nog projecten, facturen, voorraad of bestellingen naar verwijzen."
+    _flash(request, msg)
     return RedirectResponse(f"/contacten/{kind_key}", status_code=303)
 
 

@@ -49,6 +49,10 @@ class Settings(BaseSettings):
     # approved B2B invoices are 'klaar voor Peppol' and the UBL can be downloaded and uploaded elsewhere.
     peppol_api_url: str | None = Field(default=None, alias="OFFERTE_PEPPOL_API_URL")
     peppol_api_key: str | None = Field(default=None, alias="OFFERTE_PEPPOL_API_KEY")
+    # Distance to the work site (kilometre allowance): OpenStreetMap geocoding + OSRM routing. Off = typed by hand.
+    geo_enabled: bool = Field(default=True, alias="OFFERTE_GEO_ENABLED")
+    geocoder_url: str = Field(default="https://nominatim.openstreetmap.org/search", alias="OFFERTE_GEOCODER_URL")
+    router_url: str = Field(default="https://router.project-osrm.org", alias="OFFERTE_ROUTER_URL")
 
     @property
     def mcp_allowed_hosts_list(self) -> list[str]:
